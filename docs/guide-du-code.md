@@ -350,7 +350,7 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 **Les morceaux.**
 - `src/` : le code de Save Manager (`main.c` pour l'interface, `system.c` pour le montage décrypté des sauvegardes, `file.c` pour les copies...), plus notre `remote.c`.
-- `extern/vitashell/` : VitaShell, dont seuls les deux modules `modules/kernel` et `modules/user` servent : ce sont eux qui savent monter une sauvegarde décryptée.
+- `extern/vitashell/` : les deux seuls modules de VitaShell dont on a besoin, `modules/kernel` et `modules/user` : ce sont eux qui savent monter une sauvegarde décryptée.
 - `extern/libftpvita/` : le serveur FTP (MIT), avec un port rendu configurable.
 - `extern/inih/` : la lecture de `ux0:data/savemgr/config.ini`.
 - `build.sh` : compile sous WSL et produit `vita/build/vitasync.vpk`.

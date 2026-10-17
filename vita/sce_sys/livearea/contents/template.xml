@@ -11,7 +11,7 @@
     <frame id="frame3">
         <liveitem>
             <text origin="background" line-align="center" margin-bottom="1">
-                <str size="30" bold="off" shadow="on">Vita Save Manager</str>
+                <str size="30" bold="off" shadow="on">VitaSync</str>
             </text>
         </liveitem>
     </frame>
