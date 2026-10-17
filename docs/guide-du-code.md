@@ -1,6 +1,6 @@
 # Guide du code VitaSync
 
-Ce guide passe en revue chaque fichier écrit pendant les phases 1, 2, 3 et 5 : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt à la fin de la phase 5 (la phase 4 est reportée).
+Ce guide passe en revue chaque fichier écrit pendant les phases 1, 2, 3 et 5, et l'appli Vita : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt après l'automatisation du côté Vita (la phase 4 est reportée).
 
 ## Vue d'ensemble
 
@@ -25,6 +25,8 @@ VitaPcSynchro/
 │   ├── steam.py          détection de Steam ouvert
 │   ├── p4g.py            format P4G et conversion via p4g-saveconv
 │   └── p4g_sync.py       pull et push de P4G
+├── scripts/vita_dev.py   boucle de développement de l'appli Vita
+├── vita/                 l'appli Vita VitaSync (C, GPLv3)
 └── tests/                les tests automatiques (pytest)
     ├── conftest.py       « fixtures » partagées entre tests
     ├── fake_vita.py      faux serveur FTP qui imite la Vita
@@ -46,6 +48,8 @@ Et pour `vitasync restore p4g <version> --to <dossier>` : `cli.py` → `manifest
 Et pour `vitasync pull p4g --slots 7` : `cli.py` → `config.py` (Vita et Steam) → `p4g_sync.py` vérifie que Steam est fermé (`steam.py`), télécharge la copie décryptée (`ftp.py`), l'enregistre (`store.py`), la convertit (`p4g.py`), copie le dossier Steam (`safety.py`), puis écrit les slots et `remotecache.vdf`.
 
 Chaque module a une seule responsabilité. `ftp.py` ne sait rien de la ligne de commande et `cli.py` ne sait rien du protocole FTP. C'est ce qui permettra, plus tard, de réutiliser le client FTP dans `vitasync sync` sans rien réécrire.
+
+Avec l'appli VitaSync ouverte, `p4g_sync.py` envoie en plus, par le même FTP, la commande de *Backup* au début et celle de *Restore* à la fin de `push` (voir `vita/src/remote.c`).
 
 Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, `safety.py`, `p4g.py`, `p4g_sync.py`, puis `cli.py` et les tests.
 
@@ -185,6 +189,8 @@ with VitaFtpClient(config) as ftp:
 - Ajoute toujours un test dans `tests/test_ftp.py`, contre le faux serveur.
 - Retiens que VitaShell ne sert qu'un client à la fois : ne jamais ouvrir deux `VitaFtpClient` en même temps.
 
+**Les commandes de l'appli VitaSync.** Le FTP de l'appli Vita comprend trois commandes en plus des commandes FTP habituelles. `is_vitasync_app()` envoie `VSVR` : seule l'appli répond « 200 VitaSync ... », VitaShell et vitacompanion répondent par une erreur, ce qui suffit à les distinguer. `save_backup(id, slot)` envoie `VSBK` (le *Backup* de Save Manager) et `save_restore(id, slot)` envoie `VSRS` (le *Restore*). Une erreur de l'appli devient une `TransferError`.
+
 ### `manifest.py` et `games/`
 
 **Ce qu'il fait.** Chaque jeu synchronisable est décrit par une fiche YAML dans `src/vitasync/games/`. La première est `p4g.yaml` :
@@ -303,6 +309,8 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 
 Il te reste ensuite à faire *Restore* du slot 1 dans Save Manager. VitaSync ne peut pas écrire lui-même dans la sauvegarde : par FTP, elle est chiffrée, et seule une appli sur la Vita (Save Manager, VitaShell) sait la monter décryptée. Avant Save Manager, on collait les fichiers à la main dans VitaShell ; un collage hors *Open decrypted* a abîmé la sauvegarde lors des tests, d'où ce choix.
 
+**Avec l'appli VitaSync.** `_app_slot` regarde si le dossier de la fiche se termine par `SLOT<n>` et si l'appli est au bout du FTP. Si oui, `pull` et `push` demandent d'abord à l'appli un *Backup* vers ce slot (la copie est donc toujours fraîche), et `push` demande à la fin le *Restore* du slot 1. `TransferResult.automatic` le signale à `cli.py`, qui n'affiche alors plus de consigne pour Save Manager. Sans l'appli, rien ne change.
+
 Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouvert ou fermé.
 
 **Pourquoi.** L'ordre des étapes est la partie la plus importante : la conversion et toutes les vérifications ont lieu **avant** la première écriture, et la copie de sécurité juste avant elle. Si quelque chose échoue en route, la destination n'a pas été touchée.
@@ -336,9 +344,37 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 ---
 
+## L'appli Vita : `vita/`
+
+**Ce que c'est.** Un fork de [vita-savemgr](https://github.com/d3m3vilurr/vita-savemgr), en C, avec VitaSDK. Il garde tous les menus de Save Manager et range ses copies au même endroit, donc les deux applis sont interchangeables. Il s'installe sous l'identifiant `VSYNC0001`, à côté de Save Manager. Tout le dossier est sous **GPLv3**, comme l'original ; `vita/UPSTREAM.md` donne l'origine exacte de chaque morceau et la liste de nos modifications. Le reste du dépôt n'est pas concerné, et ruff ignore ce dossier.
+
+**Les morceaux.**
+- `src/` : le code de Save Manager (`main.c` pour l'interface, `system.c` pour le montage décrypté des sauvegardes, `file.c` pour les copies...), plus notre `remote.c`.
+- `extern/vitashell/` : VitaShell, dont seuls les deux modules `modules/kernel` et `modules/user` servent : ce sont eux qui savent monter une sauvegarde décryptée.
+- `extern/libftpvita/` : le serveur FTP (MIT), avec un port rendu configurable.
+- `extern/inih/` : la lecture de `ux0:data/savemgr/config.ini`.
+- `build.sh` : compile sous WSL et produit `vita/build/vitasync.vpk`.
+
+**`remote.c`, notre ajout.** `remote_start()` charge le module réseau, démarre le FTP (`ftpvita_init`) sur `ux0:`, `ur0:`, `uma0:` et `grw0:`, et enregistre trois commandes : `VSVR` (version), `VSBK <TITLEID> <slot>` et `VSRS <TITLEID> <slot>`. Ces deux dernières refont, sans interface, ce que font les boutons *Backup* et *Restore* : monter la sauvegarde décryptée (`pfs_mount`), copier vers ou depuis `ux0:data/savegames/<TITLEID>/SLOT<n>`, démonter. Au Restore, l'identifiant de compte de `param.sfo` est réécrit, comme dans Save Manager. Le bouton PS est bloqué pendant la copie, et une seule commande tourne à la fois. `remote_status()` donne le texte affiché en haut de l'écran. Le FTP s'arrête quand on quitte l'appli (`remote_stop()`).
+
+**Le port.** 1337 par défaut, comme VitaShell. `VITASYNC_FTP_PORT=1340` pour le développement, parce que vitacompanion occupe 1337.
+
+**Adapter au compilateur récent.** Le code date de 2018 : `-std=gnu99`, quelques `#include` manquants, `mkdir`/`rmdir` renommés `mkdir_p`/`rmdir_r` (conflit avec la libc), et deux erreurs de GCC 15 ramenées à des avertissements pour le code de VitaShell.
+
+**Comment le maintenir.**
+- Nouvelle commande pour le PC : une fonction `cmd_XXXX` dans `remote.c`, enregistrée avec `ftpvita_ext_add_custom_command`, plus une méthode dans `ftp.py` et une commande dans le faux serveur des tests (`tests/fake_vita.py`).
+- Toute modification de fichiers tiers se note dans `vita/UPSTREAM.md`.
+- Pour tester : `scripts/vita_dev.py` (ci-dessous). Les tests Python ne couvrent que le côté PC.
+
+### `scripts/vita_dev.py`
+
+La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme l'appli, décompresse le VPK, l'envoie par FTP, l'installe (`promote`) et la relance. `cmd "<commande>"` envoie une commande au port 1338 (`launch`, `press cross`...). `screenshot` déclenche la capture système (PS + Start), rapatrie le PNG et l'efface de la Vita. `crashes` liste les rapports de plantage. C'est un outil de développement : il suppose vitacompanion actif et l'IP de la Vita en dur.
+
+---
+
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 95, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 100, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
@@ -353,9 +389,11 @@ Quelques notions pytest utiles :
 
 **Limite à connaître.** Ce faux serveur ne reproduit pas tout VitaShell : il n'a pas de partitions `ux0:` (le `:` est interdit dans les noms de dossiers Windows) et accepte plusieurs clients à la fois. Les tests utilisent donc des chemins comme `/p4g_dump`. Le comportement propre à VitaShell se vérifie à la main sur la console, comme tu l'as fait avec `vitasync ls`.
 
+Avec `app=True`, `FakeVita` imite l'appli VitaSync : il répond à `VSVR`, et `VSBK`/`VSRS` copient entre `savedata/<TITLEID>` (la sauvegarde « décryptée ») et `savegames/<TITLEID>/SLOT<n>`.
+
 ### `conftest.py`
 
-**Ce qu'il fait.** Il définit la fixture `fake_vita` : il crée le dossier, démarre le serveur, le donne au test (`yield`), puis l'arrête proprement une fois le test terminé, même en cas d'échec.
+**Ce qu'il fait.** Il définit les fixtures `fake_vita` (un FTP ordinaire) et `fake_app` (l'appli VitaSync) : il crée le dossier, démarre le serveur, le donne au test (`yield`), puis l'arrête proprement une fois le test terminé, même en cas d'échec.
 
 **Pourquoi.** pytest charge automatiquement `conftest.py` : tous les fichiers de test y ont accès sans import.
 

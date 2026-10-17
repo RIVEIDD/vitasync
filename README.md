@@ -18,6 +18,8 @@ Phase 4 (jeu en copie directe) : reportée, P4G passe en premier.
 
 Phase 5 (Persona 4 Golden) : commandes `vitasync pull` et `vitasync push`, conversion via p4g-saveconv, vérification des MD5 et régénération de `remotecache.vdf`. Côté Vita, deux manipulations dans Save Manager (*Backup* slot 0, *Restore* slot 1) remplacent la navigation dans VitaShell.
 
+Appli Vita VitaSync : fork de Save Manager avec un FTP intégré, actif seulement quand l'appli est ouverte. `pull` et `push` lui font faire le *Backup* et le *Restore* : plus aucune manipulation sur la console. Validé dans les deux sens sur P4G.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -105,32 +107,37 @@ uv run vitasync restore p4g 20261017-142300-000000 --to "C:\chemin\vers\remote"
 
 `--slots` est obligatoire : `7`, `1,7`, `system` (pour `system.bin`) ou `all`.
 
-Côté Vita, VitaSync s'appuie sur [Save Manager](https://github.com/d3m3vilurr/vita-savemgr) (réglages par défaut) : le slot 0 reçoit la copie décryptée de la sauvegarde, le slot 1 la sauvegarde préparée par `push`. Le FTP reste celui de VitaShell.
+Côté Vita, VitaSync range ses copies dans les slots de [Save Manager](https://github.com/d3m3vilurr/vita-savemgr) : le slot 0 reçoit la copie décryptée de la sauvegarde, le slot 1 la sauvegarde préparée par `push`.
 
-**Vita → PC (`pull`)**
+**Avec l'appli VitaSync (recommandé)**
 
-1. Dans Save Manager : Persona 4 Golden → slot 0 → *Backup* (remplace l'ancienne copie).
-2. Ouvrir VitaShell et lancer le FTP (Select). Fermer Steam complètement, puis :
+Ouvrir VitaSync sur la Vita (le haut de l'écran affiche « FTP pret : IP:port »), puis sur le PC :
 
-   ```bash
-   uv run vitasync pull p4g --slots 7
-   ```
+```bash
+uv run vitasync pull p4g --slots 7   # Steam fermé ; l'appli fait le Backup, VitaSync copie vers Steam
+uv run vitasync push p4g --slots 7   # l'appli fait le Backup, VitaSync prépare le slot 1, l'appli fait le Restore
+```
 
-   VitaSync télécharge `ux0:data/savegames/PCSB00245/SLOT0`, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
+`pull` télécharge le slot 0, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
 
-**PC → Vita (`push`)**
+`push` part de la copie du slot 0, y remplace uniquement les slots demandés (`.bin` convertis et entrées de `sce_sys/sdslot.dat`), écrit le résultat complet dans le slot 1, puis le remet dans la sauvegarde.
 
-1. Dans Save Manager : slot 0 → *Backup*, comme ci-dessus. C'est la copie de sécurité de la sauvegarde Vita, et la base de la sauvegarde envoyée : `push` refuse de tourner sans elle.
-2. Dans VitaShell, lancer le FTP, puis :
+**Sans l'appli (FTP de VitaShell ou de vitacompanion)**
 
-   ```bash
-   uv run vitasync push p4g --slots 7
-   ```
-
-   VitaSync part de la copie du slot 0, y remplace uniquement les slots demandés (`.bin` convertis et entrées de `sce_sys/sdslot.dat`), et écrit le résultat complet dans `ux0:data/savegames/PCSB00245/SLOT1`.
-3. Dans Save Manager : Persona 4 Golden → slot 1 → *Restore*.
+VitaSync le détecte et ne pilote rien : faire *Backup* vers le slot 0 dans Save Manager avant `pull` ou `push`, et *Restore* du slot 1 après `push`.
 
 Les slots Steam doivent avoir été sauvegardés avec le jeu PC en anglais : la Vita européenne n'affiche plus aucune sauvegarde si un slot a des métadonnées en français, et `push` refuse ce cas.
+
+### Appli Vita (`vita/`)
+
+Fork de vita-savemgr sous GPLv3 (origine et modifications : `vita/UPSTREAM.md`). Compilation sous WSL avec VitaSDK installé dans `~/vitasdk` :
+
+```bash
+wsl -d Ubuntu-24.04 -- bash vita/build.sh                          # FTP sur 1337 -> vita/build/vitasync.vpk
+VITASYNC_FTP_PORT=1340 wsl -d Ubuntu-24.04 -- bash vita/build.sh   # FTP sur 1340 (développement)
+```
+
+Pendant le développement, [vitacompanion](https://github.com/devnoname120/vitacompanion) est chargé sous `*main` dans `ur0:tai/config.txt` (FTP 1337, commandes 1338) : il occupe le port 1337, d'où le port 1340 de l'appli. `scripts/vita_dev.py` s'en sert pour installer et lancer l'appli (`deploy`), envoyer une commande (`cmd`), prendre une capture d'écran (`screenshot`) et lister les plantages (`crashes`). vitacompanion est à retirer une fois l'appli terminée.
 
 Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
