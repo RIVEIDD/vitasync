@@ -27,6 +27,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# vita/ : code C tiers (GPLv3), copié tel quel.
+extend-exclude = ["vita"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "D"]
