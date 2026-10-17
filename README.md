@@ -85,6 +85,8 @@ Les chemins Vita s'écrivent `ux0:data/p4g_dump` ; la forme FTP `/ux0:/data/p4g_
 Chaque version d'une sauvegarde est copiée dans `%LOCALAPPDATA%\vitasync\store\<jeu>\<version>\` (`~/.local/share/vitasync/store` hors Windows), datée par l'horloge du PC. Toute écriture de VitaSync commence par y copier le dossier qu'elle va modifier.
 
 ```bash
+uv run vitasync backup p4g --pc "C:\chemin\vers\remote"   # enregistre le dossier du PC
+uv run vitasync backup p4g --vita ux0:data/p4g_dump       # ou celui de la Vita, par FTP
 uv run vitasync history p4g
 uv run vitasync restore p4g 20261017-142300-000000 --to "C:\chemin\vers\remote"
 ```

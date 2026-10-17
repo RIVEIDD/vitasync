@@ -10,7 +10,7 @@ from vitasync import __version__
 from vitasync.config import ConfigError, VitaConfig, default_config_path, load_config
 from vitasync.ftp import FtpError, VitaFtpClient
 from vitasync.manifest import ManifestError, find_game
-from vitasync.safety import write_pc_files
+from vitasync.safety import backup_pc_dir, backup_vita_dir, write_pc_files
 from vitasync.store import LocalStore, StoreError, default_store_path
 
 
@@ -33,16 +33,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     ls = subparsers.add_parser("ls", help="liste un dossier de la Vita par FTP")
     ls.add_argument("path", help="dossier Vita, par exemple ux0:data")
-    ls.add_argument("--host", help="adresse IP de la Vita (remplace la config)")
-    ls.add_argument("--port", type=int, help="port FTP de VitaShell (remplace la config)")
-    ls.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help=f"fichier de configuration (défaut : {default_config_path()})",
-    )
+    add_connection_options(ls)
 
     store_help = f"dossier du stockage des versions (défaut : {default_store_path()})"
+
+    backup = subparsers.add_parser(
+        "backup", help="enregistre une version d'un dossier du PC ou de la Vita"
+    )
+    backup.add_argument("game", help="identifiant du jeu, par exemple p4g")
+    source = backup.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pc", type=Path, metavar="DOSSIER", help="dossier du PC à enregistrer")
+    source.add_argument("--vita", metavar="CHEMIN", help="dossier de la Vita à enregistrer")
+    backup.add_argument("--store", type=Path, default=None, help=store_help)
+    add_connection_options(backup)
 
     history = subparsers.add_parser("history", help="liste les versions enregistrées d'un jeu")
     history.add_argument("game", help="identifiant du jeu, par exemple p4g")
@@ -63,6 +66,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     restore.add_argument("--store", type=Path, default=None, help=store_help)
     return parser
+
+
+def add_connection_options(parser: argparse.ArgumentParser) -> None:
+    """Ajoute les options de connexion à la Vita à une sous-commande.
+
+    Args:
+        parser: Analyseur de la sous-commande.
+    """
+    parser.add_argument("--host", help="adresse IP de la Vita (remplace la config)")
+    parser.add_argument("--port", type=int, help="port FTP de VitaShell (remplace la config)")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=f"fichier de configuration (défaut : {default_config_path()})",
+    )
 
 
 def open_store(args: argparse.Namespace) -> LocalStore:
@@ -98,6 +117,36 @@ def run_history(args: argparse.Namespace) -> int:
     for version in versions:
         local_time = version.created_at.astimezone().strftime("%d/%m/%Y %H:%M:%S")
         print(f"{version.id}  {local_time}  {version.origin}")
+    return 0
+
+
+def run_backup(args: argparse.Namespace) -> int:
+    """Enregistre une version d'un dossier du PC (``--pc``) ou de la Vita (``--vita``).
+
+    Args:
+        args: Arguments analysés de la sous-commande ``backup``.
+
+    Returns:
+        0 en cas de succès, 1 en cas d'erreur.
+    """
+    try:
+        game = find_game(args.game)
+        store = open_store(args)
+        if args.pc is not None:
+            source = str(args.pc)
+            version = backup_pc_dir(store, game.id, args.pc, origin="pc")
+        else:
+            source = args.vita
+            with VitaFtpClient(resolve_config(args)) as ftp:
+                version = backup_vita_dir(store, game.id, ftp, args.vita, origin="vita")
+    except (ManifestError, StoreError, ConfigError, FtpError, OSError) as exc:
+        print(f"Erreur : {exc}", file=sys.stderr)
+        return 1
+    if version is None:
+        print(f"Erreur : dossier introuvable : {source}", file=sys.stderr)
+        return 1
+    count = sum(1 for path in version.files.rglob("*") if path.is_file())
+    print(f"Version {version.id} enregistrée ({count} fichiers) depuis {source}")
     return 0
 
 
@@ -187,6 +236,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "ls":
         return run_ls(args)
+    if args.command == "backup":
+        return run_backup(args)
     if args.command == "history":
         return run_history(args)
     if args.command == "restore":

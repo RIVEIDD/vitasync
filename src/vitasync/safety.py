@@ -11,13 +11,16 @@ BACKUP_PC = "backup-pc"
 BACKUP_VITA = "backup-vita"
 
 
-def backup_pc_dir(store: SaveStore, game_id: str, path: Path) -> SaveVersion | None:
+def backup_pc_dir(
+    store: SaveStore, game_id: str, path: Path, origin: str = BACKUP_PC
+) -> SaveVersion | None:
     """Copie un dossier du PC dans le stockage avant qu'il soit modifié.
 
     Args:
         store: Stockage qui reçoit la copie.
         game_id: Identifiant du jeu.
         path: Dossier du PC qui va être modifié.
+        origin: Provenance enregistrée avec la copie.
 
     Returns:
         La copie créée, ou ``None`` si le dossier n'existe pas encore
@@ -25,11 +28,15 @@ def backup_pc_dir(store: SaveStore, game_id: str, path: Path) -> SaveVersion | N
     """
     if not path.exists():
         return None
-    return store.snapshot(game_id, path, origin=BACKUP_PC)
+    return store.snapshot(game_id, path, origin=origin)
 
 
 def backup_vita_dir(
-    store: SaveStore, game_id: str, ftp: VitaFtpClient, remote: str
+    store: SaveStore,
+    game_id: str,
+    ftp: VitaFtpClient,
+    remote: str,
+    origin: str = BACKUP_VITA,
 ) -> SaveVersion | None:
     """Télécharge un dossier de la Vita dans le stockage avant qu'il soit modifié.
 
@@ -38,6 +45,7 @@ def backup_vita_dir(
         game_id: Identifiant du jeu.
         ftp: Connexion ouverte à la Vita.
         remote: Dossier de la Vita qui va être modifié.
+        origin: Provenance enregistrée avec la copie.
 
     Returns:
         La copie créée, ou ``None`` si le dossier n'existe pas encore.
@@ -51,7 +59,7 @@ def backup_vita_dir(
     with tempfile.TemporaryDirectory(prefix="vitasync-") as tmp:
         files = Path(tmp) / "files"
         ftp.download_dir(remote, files)
-        return store.snapshot(game_id, files, origin=BACKUP_VITA)
+        return store.snapshot(game_id, files, origin=origin)
 
 
 def _copy_file(source: Path, dest: Path) -> None:

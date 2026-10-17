@@ -86,3 +86,36 @@ def test_restore_version_introuvable(tmp_path: Path, capsys: pytest.CaptureFixtu
     args = ["restore", "p4g", "1999", "--to", str(tmp_path / "d"), "--store", str(tmp_path)]
     assert main(args) == 1
     assert "Aucune version" in capsys.readouterr().err
+
+
+def test_backup_pc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    (remote / "data0001.bin").write_bytes(b"slot 1")
+    store = tmp_path / "store"
+
+    assert main(["backup", "p4g", "--pc", str(remote), "--store", str(store)]) == 0
+    assert "(1 fichiers)" in capsys.readouterr().out
+    version = LocalStore(store).get("p4g")
+    assert version.origin == "pc"
+    assert (version.files / "data0001.bin").read_bytes() == b"slot 1"
+
+
+def test_backup_vita(
+    fake_vita: FakeVita, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (fake_vita.root / "p4g_dump" / "sce_sys").mkdir(parents=True)
+    (fake_vita.root / "p4g_dump" / "sce_sys" / "sdslot.dat").write_bytes(b"slots")
+    store = tmp_path / "store"
+    args = ["backup", "p4g", "--vita", "/p4g_dump", "--store", str(store)]
+
+    assert main([*args, "--host", "127.0.0.1", "--port", str(fake_vita.port)]) == 0
+    version = LocalStore(store).get("p4g")
+    assert version.origin == "vita"
+    assert (version.files / "sce_sys" / "sdslot.dat").read_bytes() == b"slots"
+
+
+def test_backup_dossier_absent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = ["backup", "p4g", "--pc", str(tmp_path / "absent"), "--store", str(tmp_path)]
+    assert main(args) == 1
+    assert "introuvable" in capsys.readouterr().err

@@ -251,6 +251,8 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 - `build_parser()` déclare l'option `--version` et la sous-commande `ls` avec ses options `path`, `--host`, `--port` et `--config`. C'est aussi ce qui produit l'aide de `vitasync -h` et `vitasync ls -h`.
 - `resolve_config(args)` choisit la configuration : si `--host` est donné, le fichier est ignoré ; sinon le fichier est lu. `--port` remplace le port dans les deux cas.
 - `run_ls(args)` se connecte, liste, puis affiche une ligne par entrée (taille alignée à droite, ou `<dir>`). Une `ConfigError` ou une `FtpError` est affichée sur la sortie d'erreur avec le code 1, sans trace Python effrayante.
+- `add_connection_options(parser)` ajoute `--host`, `--port` et `--config` à une sous-commande ; `ls` et `backup` s'en servent.
+- `run_backup(args)` enregistre une version, soit d'un dossier du PC (`--pc`), soit d'un dossier de la Vita téléchargé par FTP (`--vita`). Les deux options sont exclusives (`add_mutually_exclusive_group`). La provenance enregistrée est `pc` ou `vita`, pour la distinguer des copies automatiques `backup-pc` et `backup-vita`.
 - `run_history(args)` affiche une ligne par version : identifiant, date en heure locale, provenance.
 - `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
 - `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
@@ -270,7 +272,7 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 54, et ils tournent en environ une seconde, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 57, et ils tournent en environ une seconde, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
@@ -315,7 +317,7 @@ Il vérifie que la copie de sécurité est faite avant l'écriture, que seuls le
 
 ### `test_cli.py`
 
-`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente. Puis `history` (vide, jeu inconnu) et un `restore` complet : le test vérifie que la version est écrite et que l'ancien contenu a été copié dans le stockage.
+`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente. Puis `backup` (PC, Vita, dossier absent), `history` (vide, jeu inconnu) et un `restore` complet : le test vérifie que la version est écrite et que l'ancien contenu a été copié dans le stockage.
 
 ---
 
