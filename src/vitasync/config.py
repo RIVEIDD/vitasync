@@ -61,18 +61,70 @@ def load_config(path: Path) -> VitaConfig:
     Raises:
         ConfigError: Si le fichier est absent, illisible ou invalide.
     """
+    vita = _read_toml(path).get("vita")
+    if not isinstance(vita, dict):
+        raise ConfigError(f"Section [vita] manquante dans {path}")
+    return _parse_vita(vita)
+
+
+@dataclass(frozen=True)
+class SteamConfig:
+    """Emplacements côté PC.
+
+    Attributes:
+        userdata: Dossier ``Steam/userdata/<id>`` du compte Steam.
+        p4g_saveconv: Dossier de l'outil p4g-saveconv, ou ``None`` s'il n'est
+            pas configuré.
+    """
+
+    userdata: Path
+    p4g_saveconv: Path | None = None
+
+
+def load_steam_config(path: Path) -> SteamConfig:
+    """Lit la section ``[steam]`` d'un fichier de configuration TOML.
+
+    Exemple de fichier::
+
+        [steam]
+        userdata = 'C:/Program Files (x86)/Steam/userdata/125320760'
+        p4g_saveconv = 'F:/Projets/VitaPcSynchro/outils/p4g-saveconv'
+
+    Args:
+        path: Chemin du fichier TOML.
+
+    Returns:
+        Les emplacements côté PC.
+
+    Raises:
+        ConfigError: Si le fichier est absent, illisible ou invalide.
+    """
+    steam = _read_toml(path).get("steam")
+    if not isinstance(steam, dict):
+        raise ConfigError(f"Section [steam] manquante dans {path}")
+    userdata = steam.get("userdata")
+    if not isinstance(userdata, str) or not userdata:
+        raise ConfigError("[steam] userdata doit être un chemin non vide")
+    saveconv = steam.get("p4g_saveconv")
+    if saveconv is not None and (not isinstance(saveconv, str) or not saveconv):
+        raise ConfigError("[steam] p4g_saveconv doit être un chemin non vide")
+    return SteamConfig(
+        userdata=Path(userdata),
+        p4g_saveconv=Path(saveconv) if saveconv else None,
+    )
+
+
+def _read_toml(path: Path) -> dict[str, object]:
     try:
         with path.open("rb") as file:
-            data = tomllib.load(file)
+            return tomllib.load(file)
     except FileNotFoundError as exc:
         raise ConfigError(f"Fichier de configuration introuvable : {path}") from exc
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"Fichier de configuration illisible : {path} ({exc})") from exc
 
-    vita = data.get("vita")
-    if not isinstance(vita, dict):
-        raise ConfigError(f"Section [vita] manquante dans {path}")
 
+def _parse_vita(vita: dict[str, object]) -> VitaConfig:
     host = vita.get("host")
     if not isinstance(host, str) or not host:
         raise ConfigError("[vita] host doit être une adresse non vide")

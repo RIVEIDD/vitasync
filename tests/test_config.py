@@ -2,7 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from vitasync.config import DEFAULT_PORT, ConfigError, VitaConfig, load_config
+from vitasync.config import (
+    DEFAULT_PORT,
+    ConfigError,
+    SteamConfig,
+    VitaConfig,
+    load_config,
+    load_steam_config,
+)
 
 
 def write(tmp_path: Path, content: str) -> Path:
@@ -42,3 +49,34 @@ def test_fichier_absent(tmp_path: Path) -> None:
 def test_config_invalide(tmp_path: Path, content: str) -> None:
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, content))
+
+
+def test_charge_la_section_steam(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        "[steam]\nuserdata = 'C:/Steam/userdata/125320760'\np4g_saveconv = 'outils/p4g-saveconv'\n",
+    )
+
+    assert load_steam_config(path) == SteamConfig(
+        userdata=Path("C:/Steam/userdata/125320760"),
+        p4g_saveconv=Path("outils/p4g-saveconv"),
+    )
+
+
+def test_steam_sans_saveconv(tmp_path: Path) -> None:
+    path = write(tmp_path, "[steam]\nuserdata = 'C:/Steam/userdata/1'\n")
+
+    assert load_steam_config(path).p4g_saveconv is None
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[vita]\nhost = 'x'\n",
+        "[steam]\nuserdata = ''\n",
+        "[steam]\nuserdata = 'x'\np4g_saveconv = 3\n",
+    ],
+)
+def test_section_steam_invalide(tmp_path: Path, content: str) -> None:
+    with pytest.raises(ConfigError):
+        load_steam_config(write(tmp_path, content))
