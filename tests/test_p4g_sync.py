@@ -139,3 +139,56 @@ def test_push_refuse_sans_copie_de_la_vita(
         push(store, ftp, steam, game, [7])
 
     assert not (fake_vita.root / "p4g_in").exists()
+
+
+@pytest.fixture
+def app_game(game: GameManifest) -> GameManifest:
+    return replace(
+        game,
+        vita=replace(
+            game.vita,
+            dump="/savegames/PCSB00245/SLOT0",
+            inbox="/savegames/PCSB00245/SLOT1",
+        ),
+    )
+
+
+def test_pull_avec_l_appli_fait_le_backup_seule(
+    fake_app: FakeVita, steam: SteamConfig, app_game: GameManifest, store: LocalStore
+) -> None:
+    # Pas de slot 0 : c'est l'appli qui le crée à partir de la sauvegarde.
+    make_vita_save(fake_app.root / "savedata" / "PCSB00245", {7: b"sept vita"})
+
+    with VitaFtpClient(fake_app.config) as ftp:
+        result = pull(store, ftp, steam, app_game, [7], steam_running=lambda: False)
+
+    assert result.automatic
+    assert (remote(steam) / "data0007.bin").read_bytes() == b"pc:sept vita"
+
+
+def test_push_avec_l_appli_restaure_seule(
+    fake_app: FakeVita, steam: SteamConfig, app_game: GameManifest, store: LocalStore
+) -> None:
+    save = make_vita_save(
+        fake_app.root / "savedata" / "PCSB00245", {1: b"un vita", 7: b"sept vita"}
+    )
+
+    with VitaFtpClient(fake_app.config) as ftp:
+        result = push(store, ftp, steam, app_game, [7])
+
+    assert result.automatic
+    assert (save / "data0007.bin").read_bytes() == b"vita:sept pc"
+    assert (save / "data0001.bin").read_bytes() == b"un vita"
+    assert result.backup is not None
+    assert (result.backup.files / "data0007.bin").read_bytes() == b"sept vita"
+
+
+def test_sans_l_appli_rien_n_est_automatique(
+    fake_vita: FakeVita, steam: SteamConfig, game: GameManifest, store: LocalStore
+) -> None:
+    make_vita_save(fake_vita.root / "p4g_dump", {7: b"sept vita"})
+
+    with VitaFtpClient(fake_vita.config) as ftp:
+        result = push(store, ftp, steam, game, [7])
+
+    assert not result.automatic

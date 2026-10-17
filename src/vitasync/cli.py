@@ -212,7 +212,11 @@ def run_transfer(args: argparse.Namespace) -> int:
     if result.backup is not None:
         print(f"Copie de sécurité de la destination : {result.backup.id}")
     if args.command == "pull":
+        if result.automatic:
+            print("Backup fait par l'appli VitaSync sur la Vita.")
         print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
+    elif result.automatic:
+        print(f"Restauré sur la Vita par l'appli VitaSync (slots remplacés : {files}).")
     else:
         slot = (game.vita.inbox or "").rstrip("/").rsplit("/", 1)[-1]
         print(f"Sauvegarde complète prête dans {game.vita.inbox} (slots remplacés : {files})")

@@ -1,5 +1,6 @@
 """Transferts de Persona 4 Golden entre la Vita et Steam (``pull`` et ``push``)."""
 
+import re
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -30,11 +31,14 @@ class TransferResult:
         source: Version enregistrée de la sauvegarde d'origine.
         backup: Copie de sécurité de la destination, ou ``None`` si elle
             n'existait pas encore.
+        automatic: ``True`` si l'appli VitaSync a fait elle-même le Backup
+            (``pull``) ou le Restore (``push``) sur la Vita.
     """
 
     files: list[str]
     source: SaveVersion
     backup: SaveVersion | None
+    automatic: bool = False
 
 
 def _saveconv(steam: SteamConfig) -> Path:
@@ -49,6 +53,19 @@ def _vita_dir(value: str | None, key: str, game: GameManifest) -> str:
     return value
 
 
+def _slot_number(path: str) -> int | None:
+    match = re.search(r"SLOT(\d)$", path.rstrip("/"))
+    return int(match.group(1)) if match else None
+
+
+def _app_slot(ftp: VitaFtpClient, path: str) -> int | None:
+    """Slot de Save Manager à piloter, si l'appli VitaSync est au bout du FTP."""
+    slot = _slot_number(path)
+    if slot is None or not ftp.is_vitasync_app():
+        return None
+    return slot
+
+
 def pull(
     store: SaveStore,
     ftp: VitaFtpClient,
@@ -59,7 +76,9 @@ def pull(
 ) -> TransferResult:
     """Copie des slots de la Vita vers Steam.
 
-    Étapes : télécharger la copie décryptée (``vita.dump``) et l'enregistrer,
+    Si l'appli VitaSync est ouverte sur la Vita, elle fait d'abord elle-même
+    le Backup de la sauvegarde vers ``vita.dump``. Étapes suivantes :
+    télécharger la copie décryptée (``vita.dump``) et l'enregistrer,
     la convertir au format PC, copier tout le dossier Steam du jeu dans le
     stockage, puis écrire uniquement les slots demandés et régénérer
     ``remotecache.vdf``.
@@ -90,6 +109,9 @@ def pull(
     remote = steam.userdata / game.pc.path
     app_dir = remote.parent
 
+    dump_slot = _app_slot(ftp, dump)
+    if dump_slot is not None:
+        ftp.save_backup(game.vita.title_id, dump_slot)
     if not ftp.dir_exists(dump):
         raise SyncError(f"{dump} introuvable sur la Vita : {BACKUP_HINT}")
     with tempfile.TemporaryDirectory(prefix="vitasync-pull-") as tmp:
@@ -105,7 +127,9 @@ def pull(
         for file in sorted(converted.iterdir()):
             copy_file(file, remote / file.name)
     p4g.write_remotecache(remote, app_dir / "remotecache.vdf")
-    return TransferResult(files=files, source=source, backup=backup)
+    return TransferResult(
+        files=files, source=source, backup=backup, automatic=dump_slot is not None
+    )
 
 
 def push(
@@ -120,8 +144,11 @@ def push(
     Étapes : enregistrer le dossier Steam, télécharger la copie décryptée
     actuelle de la Vita (``vita.dump``) comme copie de sécurité, partir de
     cette copie et y remplacer uniquement les slots demandés (``.bin`` et
-    entrées de ``sdslot.dat``), puis vider et remplir ``vita.inbox``. Il
-    reste à restaurer ce dossier avec Save Manager.
+    entrées de ``sdslot.dat``), puis vider et remplir ``vita.inbox``.
+
+    Si l'appli VitaSync est ouverte sur la Vita, elle fait elle-même le Backup
+    vers ``vita.dump`` au début et le Restore de ``vita.inbox`` à la fin.
+    Sinon, il reste à faire ce Restore avec Save Manager.
 
     Args:
         store: Stockage des versions et des copies de sécurité.
@@ -147,6 +174,10 @@ def push(
         raise SyncError(f"Dossier Steam introuvable : {remote}")
 
     source = store.snapshot(game.id, remote, origin="pc")
+    dump_slot = _app_slot(ftp, dump)
+    inbox_slot = _slot_number(inbox) if dump_slot is not None else None
+    if dump_slot is not None:
+        ftp.save_backup(game.vita.title_id, dump_slot)
     backup = backup_vita_dir(store, game.id, ftp, dump)
     if backup is None:
         raise SyncError(
@@ -167,4 +198,8 @@ def push(
         if ftp.dir_exists(inbox):
             ftp.remove_tree(inbox)
         ftp.upload_dir(converted, inbox)
-    return TransferResult(files=files, source=source, backup=backup)
+    if inbox_slot is not None:
+        ftp.save_restore(game.vita.title_id, inbox_slot)
+    return TransferResult(
+        files=files, source=source, backup=backup, automatic=inbox_slot is not None
+    )
