@@ -235,6 +235,27 @@ class VitaFtpClient:
         except ftplib.all_errors as exc:
             raise TransferError(f"Échec de l'envoi de {local} vers {ftp_path} ({exc})") from exc
 
+    def dir_exists(self, remote: str) -> bool:
+        """Indique si un dossier existe sur la Vita.
+
+        Args:
+            remote: Dossier distant, au format Vita ou FTP.
+
+        Returns:
+            ``True`` si le dossier existe.
+
+        Raises:
+            TransferError: Si la connexion est coupée.
+        """
+        ftp_path = to_ftp_path(remote)
+        try:
+            self._conn.cwd(ftp_path)
+        except ftplib.error_perm:
+            return False
+        except ftplib.all_errors as exc:
+            raise TransferError(f"Impossible d'accéder à {ftp_path} ({exc})") from exc
+        return True
+
     def make_dir(self, remote: str) -> None:
         """Crée un dossier sur la Vita s'il n'existe pas déjà.
 
@@ -245,13 +266,8 @@ class VitaFtpClient:
             TransferError: Si le dossier ne peut pas être créé.
         """
         ftp_path = to_ftp_path(remote)
-        try:
-            self._conn.cwd(ftp_path)
+        if self.dir_exists(ftp_path):
             return
-        except ftplib.error_perm:
-            pass
-        except ftplib.all_errors as exc:
-            raise TransferError(f"Impossible d'accéder à {ftp_path} ({exc})") from exc
         try:
             self._conn.mkd(ftp_path)
         except ftplib.all_errors as exc:
