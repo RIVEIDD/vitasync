@@ -16,8 +16,10 @@ class PcSide:
     """Emplacement des sauvegardes côté PC.
 
     Attributes:
-        path: Dossier des sauvegardes. Pour un jeu Steam, il est relatif au
-            dossier ``Steam/userdata/<id>/`` de l'utilisateur.
+        path: Dossier des sauvegardes, avec des dossiers connus entre
+            accolades : ``{steam_userdata}``, ``{documents}``, ``{appdata}``,
+            ``{localappdata}``, ``{home}`` (voir :mod:`vitasync.paths`). Sans
+            accolades, il est relatif à ``Steam/userdata/<id>/``.
         steam_appid: Identifiant Steam du jeu, ou ``None`` hors Steam.
     """
 

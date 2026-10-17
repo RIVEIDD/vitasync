@@ -11,6 +11,7 @@ from vitasync import p4g
 from vitasync.config import SteamConfig
 from vitasync.ftp import VitaFtpClient
 from vitasync.manifest import GameManifest
+from vitasync.paths import resolve_pc_path
 from vitasync.safety import backup_pc_dir, backup_vita_dir, copy_file
 from vitasync.steam import is_steam_running
 from vitasync.store import SaveStore, SaveVersion
@@ -106,7 +107,7 @@ def pull(
         raise SyncError("Steam est ouvert : ferme-le complètement avant un pull")
     saveconv = _saveconv(steam)
     dump = _vita_dir(game.vita.dump, "dump", game)
-    remote = steam.userdata / game.pc.path
+    remote = resolve_pc_path(game.pc.path, steam)
     app_dir = remote.parent
 
     dump_slot = _app_slot(ftp, dump)
@@ -169,7 +170,7 @@ def push(
     saveconv = _saveconv(steam)
     dump = _vita_dir(game.vita.dump, "dump", game)
     inbox = _vita_dir(game.vita.inbox, "inbox", game)
-    remote = steam.userdata / game.pc.path
+    remote = resolve_pc_path(game.pc.path, steam)
     if not remote.is_dir():
         raise SyncError(f"Dossier Steam introuvable : {remote}")
 
@@ -259,7 +260,7 @@ def status(ftp: VitaFtpClient, steam: SteamConfig, game: GameManifest) -> list[S
         sdslot = Path(tmp) / "sdslot.dat"
         ftp.download_file(f"{dump.rstrip('/')}/{p4g.SDSLOT.as_posix()}", sdslot)
         vita = p4g.vita_play_times(sdslot.read_bytes())
-    pc = p4g.pc_play_times(steam.userdata / game.pc.path)
+    pc = p4g.pc_play_times(resolve_pc_path(game.pc.path, steam))
     return [
         SlotState(slot, pc.get(slot), vita.get(slot)) for slot in sorted(pc.keys() | vita.keys())
     ]
