@@ -116,11 +116,11 @@ def load_steam_config(path: Path) -> SteamConfig:
 
 def _read_toml(path: Path) -> dict[str, object]:
     try:
-        with path.open("rb") as file:
-            return tomllib.load(file)
+        # utf-8-sig : accepte aussi les fichiers enregistrés avec un BOM (Bloc-notes, PowerShell).
+        return tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise ConfigError(f"Fichier de configuration introuvable : {path}") from exc
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"Fichier de configuration illisible : {path} ({exc})") from exc
 
 

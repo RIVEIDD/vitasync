@@ -80,3 +80,10 @@ def test_steam_sans_saveconv(tmp_path: Path) -> None:
 def test_section_steam_invalide(tmp_path: Path, content: str) -> None:
     with pytest.raises(ConfigError):
         load_steam_config(write(tmp_path, content))
+
+
+def test_accepte_un_fichier_avec_bom(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[vita]\nhost = "192.168.1.5"\n', encoding="utf-8-sig")
+
+    assert load_config(path).host == "192.168.1.5"
