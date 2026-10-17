@@ -1,0 +1,19 @@
+# Sauvegardes de référence (données personnelles, binaires) : gardées en local
+Références initiales/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Éditeurs / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
