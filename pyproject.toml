@@ -16,6 +16,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "mypy>=1.13",
+    "pyftpdlib>=2.2.0",
     "pytest>=8.3",
     "ruff>=0.8",
 ]
@@ -38,6 +39,11 @@ strict = true
 python_version = "3.12"
 files = ["src", "tests"]
 
+[[tool.mypy.overrides]]
+module = ["pyftpdlib.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = ["ignore:write permissions assigned to anonymous user:RuntimeWarning"]
