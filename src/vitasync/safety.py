@@ -62,7 +62,13 @@ def backup_vita_dir(
         return store.snapshot(game_id, files, origin=origin)
 
 
-def _copy_file(source: Path, dest: Path) -> None:
+def copy_file(source: Path, dest: Path) -> None:
+    """Copie un fichier via un ``.part`` renommé à la fin : jamais de fichier tronqué.
+
+    Args:
+        source: Fichier à copier.
+        dest: Fichier à créer ou remplacer.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".part")
     try:
@@ -91,7 +97,7 @@ def write_pc_files(store: SaveStore, game_id: str, source: Path, dest: Path) -> 
     backup = backup_pc_dir(store, game_id, dest)
     for file in sorted(source.rglob("*")):
         if file.is_file():
-            _copy_file(file, dest / file.relative_to(source))
+            copy_file(file, dest / file.relative_to(source))
     return backup
 
 

@@ -1,10 +1,13 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from fake_saveconv import install, make_pc_save, make_vita_save
 from fake_vita import FakeVita
 
-from vitasync import __version__
+from vitasync import __version__, cli
 from vitasync.cli import main
+from vitasync.manifest import find_game
 from vitasync.store import LocalStore
 
 
@@ -119,3 +122,59 @@ def test_backup_dossier_absent(tmp_path: Path, capsys: pytest.CaptureFixture[str
     args = ["backup", "p4g", "--pc", str(tmp_path / "absent"), "--store", str(tmp_path)]
     assert main(args) == 1
     assert "introuvable" in capsys.readouterr().err
+
+
+def transfer_setup(
+    fake_vita: FakeVita, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """Prépare une config, un faux Steam, un faux p4g-saveconv et une copie Vita."""
+    game = find_game("p4g")
+    game = replace(game, vita=replace(game.vita, dump="/p4g_dump", inbox="/p4g_in"))
+    monkeypatch.setattr(cli, "find_game", lambda game_id: game)
+    monkeypatch.setattr("vitasync.p4g_sync.is_steam_running", lambda: False)
+
+    userdata = tmp_path / "userdata"
+    remote = make_pc_save(userdata / "1113000" / "remote", {7: b"sept pc"})
+    make_vita_save(fake_vita.root / "p4g_dump", {7: b"sept vita"})
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f"[vita]\nhost = '127.0.0.1'\nport = {fake_vita.port}\n"
+        f"[steam]\nuserdata = '{userdata.as_posix()}'\n"
+        f"p4g_saveconv = '{install(tmp_path / 'tool').as_posix()}'\n",
+        encoding="utf-8",
+    )
+    return config, remote
+
+
+def test_pull(
+    fake_vita: FakeVita,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config, remote = transfer_setup(fake_vita, tmp_path, monkeypatch)
+    args = ["pull", "p4g", "--slots", "7", "--config", str(config), "--store", str(tmp_path / "s")]
+
+    assert main(args) == 0
+    assert "Copié dans Steam : data0007.bin" in capsys.readouterr().out
+    assert (remote / "data0007.bin").read_bytes() == b"pc:sept vita"
+
+
+def test_push(
+    fake_vita: FakeVita,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config, _ = transfer_setup(fake_vita, tmp_path, monkeypatch)
+    args = ["push", "p4g", "--slots", "7", "--config", str(config), "--store", str(tmp_path / "s")]
+
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "Open decrypted" in out and "data0007.bin" in out
+    assert (fake_vita.root / "p4g_in" / "data0007.bin").read_bytes() == b"vita:sept pc"
+
+
+def test_slots_invalides(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["pull", "p4g", "--slots", "42", "--config", str(tmp_path / "c.toml")]) == 1
+    assert "slot invalide" in capsys.readouterr().err

@@ -6,10 +6,18 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from vitasync import __version__
-from vitasync.config import ConfigError, VitaConfig, default_config_path, load_config
+from vitasync import __version__, p4g_sync
+from vitasync.config import (
+    ConfigError,
+    VitaConfig,
+    default_config_path,
+    load_config,
+    load_steam_config,
+)
 from vitasync.ftp import FtpError, VitaFtpClient
 from vitasync.manifest import ManifestError, find_game
+from vitasync.p4g import ConversionError, parse_slots
+from vitasync.p4g_sync import SyncError
 from vitasync.safety import backup_pc_dir, backup_vita_dir, write_pc_files
 from vitasync.store import LocalStore, StoreError, default_store_path
 
@@ -65,6 +73,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="dossier du PC à mettre à jour",
     )
     restore.add_argument("--store", type=Path, default=None, help=store_help)
+
+    for name, help_text in (
+        ("pull", "copie des slots de la Vita vers Steam (Steam fermé)"),
+        ("push", "prépare des slots de Steam pour la Vita, dans le dossier de transit"),
+    ):
+        transfer = subparsers.add_parser(name, help=help_text)
+        transfer.add_argument("game", help="identifiant du jeu, par exemple p4g")
+        transfer.add_argument(
+            "--slots",
+            required=True,
+            help="slots à transférer : 7, 1,7, system ou all",
+        )
+        transfer.add_argument("--store", type=Path, default=None, help=store_help)
+        add_connection_options(transfer)
     return parser
 
 
@@ -147,6 +169,56 @@ def run_backup(args: argparse.Namespace) -> int:
         return 1
     count = sum(1 for path in version.files.rglob("*") if path.is_file())
     print(f"Version {version.id} enregistrée ({count} fichiers) depuis {source}")
+    return 0
+
+
+def run_transfer(args: argparse.Namespace) -> int:
+    """Lance ``pull`` (Vita vers Steam) ou ``push`` (Steam vers la Vita).
+
+    Args:
+        args: Arguments analysés de la sous-commande ``pull`` ou ``push``.
+
+    Returns:
+        0 en cas de succès, 1 en cas d'erreur (rien n'est alors écrit à la
+        destination).
+    """
+    try:
+        slots = parse_slots(args.slots)
+        game = find_game(args.game)
+        if game.adapter != "p4g":
+            raise SyncError(f"{game.name} : adaptateur {game.adapter} pas encore pris en charge")
+        steam = load_steam_config(args.config or default_config_path())
+        store = open_store(args)
+        with VitaFtpClient(resolve_config(args)) as ftp:
+            if args.command == "pull":
+                result = p4g_sync.pull(store, ftp, steam, game, slots)
+            else:
+                result = p4g_sync.push(store, ftp, steam, game, slots)
+    except (
+        ValueError,
+        ManifestError,
+        StoreError,
+        ConfigError,
+        FtpError,
+        ConversionError,
+        SyncError,
+        OSError,
+    ) as exc:
+        print(f"Erreur : {exc}", file=sys.stderr)
+        return 1
+
+    files = ", ".join(result.files)
+    print(f"Version d'origine enregistrée : {result.source.id}")
+    if result.backup is not None:
+        print(f"Copie de sécurité de la destination : {result.backup.id}")
+    if args.command == "pull":
+        print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
+    else:
+        print(f"Prêt dans {game.vita.inbox} : {files}, sce_sys/sdslot.dat")
+        print(
+            f"Dans VitaShell : {game.vita.title_id} > Triangle > Open decrypted, colle ces "
+            "fichiers à l'intérieur (sans remplacer le dossier), puis sors avec Rond."
+        )
     return 0
 
 
@@ -242,5 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_history(args)
     if args.command == "restore":
         return run_restore(args)
+    if args.command in ("pull", "push"):
+        return run_transfer(args)
     parser.print_help()
     return 0
