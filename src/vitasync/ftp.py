@@ -292,7 +292,9 @@ class VitaFtpClient:
                 self.remove_tree(child)
                 continue
             try:
-                self._conn.delete(child)
+                # VitaShell répond « 226 File deleted. » là où ftplib attend 250 :
+                # on accepte toute réponse 2xx.
+                self._conn.voidcmd(f"DELE {child}")
             except ftplib.all_errors as exc:
                 raise TransferError(f"Impossible de supprimer {child} ({exc})") from exc
         try:

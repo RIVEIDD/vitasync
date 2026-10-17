@@ -137,3 +137,26 @@ def test_remove_tree(fake_vita: FakeVita) -> None:
         assert not ftp.dir_exists("/p4g_dump")
 
     assert list(fake_vita.root.iterdir()) == []
+
+
+def test_remove_tree_accepte_la_reponse_226_de_vitashell(
+    fake_vita: FakeVita, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_save(fake_vita.root)
+    real_putcmd, real_getresp = ftplib.FTP.putcmd, ftplib.FTP.getresp
+    last: list[str] = [""]
+
+    def putcmd(self: ftplib.FTP, line: str) -> None:
+        last[0] = line
+        real_putcmd(self, line)
+
+    def getresp(self: ftplib.FTP) -> str:
+        response = real_getresp(self)
+        return "226 File deleted." if last[0].startswith("DELE") else response
+
+    monkeypatch.setattr(ftplib.FTP, "putcmd", putcmd)
+    monkeypatch.setattr(ftplib.FTP, "getresp", getresp)
+    with VitaFtpClient(fake_vita.config) as ftp:
+        ftp.remove_tree("/p4g_dump")
+
+    assert list(fake_vita.root.iterdir()) == []
