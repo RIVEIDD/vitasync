@@ -23,8 +23,11 @@ VitaPcSynchro/
 │   ├── store.py          stockage versionné des sauvegardes
 │   ├── safety.py         écritures précédées d'une copie de sécurité
 │   ├── steam.py          détection de Steam ouvert
+│   ├── paths.py          dossiers PC des fiches ({documents}, {steam_userdata}...)
 │   ├── p4g.py            format P4G et conversion via p4g-saveconv
-│   └── p4g_sync.py       pull et push de P4G
+│   ├── p4g_sync.py       pull et push de P4G
+│   ├── hotline_miami.py  format SaveData.sav de Hotline Miami
+│   └── hotline_miami_sync.py  pull, push et status de Hotline Miami
 ├── scripts/vita_dev.py   boucle de développement de l'appli Vita
 ├── vita/                 l'appli Vita VitaSync (C, GPLv3)
 └── tests/                les tests automatiques (pytest)
@@ -320,6 +323,22 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 
 **Comment le maintenir.** Garde cet ordre : lire, convertir, vérifier, copier la destination, écrire. Une limite à connaître : `push` fait confiance au slot 0. Si cette copie est ancienne, la sauvegarde envoyée reprendra les anciens autres slots. D'où la consigne de refaire *Backup* juste avant chaque `push`.
 
+### `paths.py`
+
+**Ce qu'il fait.** `resolve_pc_path(chemin, steam)` transforme le chemin PC d'une fiche de jeu en vrai dossier. Les dossiers connus s'écrivent entre accolades : `{steam_userdata}` (le dossier `Steam\userdata\<id>` de la config), `{documents}`, `{appdata}`, `{localappdata}` et `{home}`. Un chemin sans accolades reste relatif au dossier Steam, pour les anciennes fiches.
+
+**Pourquoi.** Toutes les sauvegardes ne sont pas chez Steam : celle de Hotline Miami est dans `Documents`. C'est aussi la base pour gérer plus tard GOG ou Epic.
+
+**Comment le maintenir.** Un nouveau dossier connu s'ajoute dans `known_folders`, avec un test dans `tests/test_paths.py`.
+
+### `hotline_miami.py` et `hotline_miami_sync.py`
+
+**Le format.** `SaveData.sav` fait 256 Kio : un en-tête (vide sur PC, 52 octets sur Vita), l'octet `0x01`, puis une suite de fichiers internes (longueur du nom, nom, longueur, contenu), la marque `EF BE AD DE` et des zéros. `parse` et `build` lisent et écrivent ce format ; sur tes vraies sauvegardes, `build(parse(f))` redonne le fichier à l'octet près. `transfer(source, cible)` reprend dans `source` les fichiers présents des deux côtés et garde l'en-tête et les fichiers propres à la cible. `progress` compte les niveaux débloqués (les `1` des deux premières lignes de `saves.dat`).
+
+**La synchro.** `hotline_miami_sync.py` reprend la logique de `p4g_sync.py` pour un jeu à une seule sauvegarde : Backup par l'appli si elle est là, copie de sécurité avant d'écrire, Restore automatique après un `push`. `status` renvoie un seul `SlotState` (numéro 1) dont les valeurs sont des nombres de niveaux, ce qui permet de réutiliser `plan_sync`.
+
+**Ce qu'on ne sait pas.** Le rôle des 7 premiers octets de l'en-tête Vita : ce n'est ni un MD5, ni un SHA, ni un CRC du contenu, et le jeu ne les vérifie pas (essai réussi sur ta Vita).
+
 ### `cli.py`
 
 **Ce qu'il fait.** C'est la ligne de commande, construite avec `argparse` (standard).
@@ -333,6 +352,7 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 - `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
 - `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
 - `run_transfer(args)` sert à `pull` et `push` : il lit `--slots`, la fiche, les sections `[vita]` et `[steam]` de la config, ouvre la connexion FTP et appelle `p4g_sync`. Après un `push`, il affiche la manipulation à faire dans VitaShell.
+- `run_transfer` choisit le module selon l'adaptateur de la fiche (`p4g` ou `hotline_miami`). `--slots` n'est obligatoire que pour P4G, et la section `[steam]` de la config n'est exigée que pour lui.
 - `status` et `sync` passent aussi par `run_transfer` : `status` affiche le tableau (`print_status`, `format_play_time`) ; `sync` appelle `plan_sync`, annonce le sens choisi, puis enchaîne sur `pull` ou `push` avec la même connexion. Les slots de `pull`/`push` sont vérifiés avant toute connexion.
 - `main(argv)` analyse les arguments et aiguille vers la bonne sous-commande. Sans sous-commande, elle affiche l'aide. Le paramètre `argv` permet aux tests d'appeler `main(["ls", ...])` sans lancer de vrai processus.
 
@@ -378,7 +398,7 @@ La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 106, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 117, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.

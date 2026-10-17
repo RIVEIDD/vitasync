@@ -22,6 +22,8 @@ Appli Vita VitaSync : fork de Save Manager avec un FTP intégré, actif seulemen
 
 Phase 6 (en cours) : `vitasync status` compare le temps de jeu de chaque slot entre Steam et la Vita, et `vitasync sync` copie les slots les plus avancés dans le bon sens.
 
+Phase 4 (deuxième jeu) : **Hotline Miami** (Steam 219150 ↔ Vita PCSB00318), sauvegarde `Documents\My Games\HotlineMiami\SaveData.sav`. Les fiches de jeu peuvent désormais viser des dossiers PC hors Steam.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -136,6 +138,19 @@ uv run vitasync sync p4g     # pull ou push des slots les plus avancés (Steam f
 **Sans l'appli (FTP de VitaShell ou de vitacompanion)**
 
 VitaSync le détecte et ne pilote rien : faire *Backup* vers le slot 0 dans Save Manager avant `pull` ou `push`, et *Restore* du slot 1 après `push`.
+
+### Hotline Miami
+
+Mêmes commandes, sans `--slots` (le jeu n'a qu'une sauvegarde) :
+
+```bash
+uv run vitasync status hotline_miami   # niveaux débloqués de chaque côté
+uv run vitasync sync hotline_miami
+```
+
+`SaveData.sav` est un conteneur de petits fichiers texte, presque identique des deux côtés (52 octets d'en-tête en plus sur Vita, non vérifiés par le jeu). Un transfert reprend les fichiers communs (progression, succès, statistiques) et garde l'en-tête et les fichiers propres à la destination (trophées sur Vita, réglages sur PC).
+
+### Persona 4 Golden : langue
 
 Les slots Steam doivent avoir été sauvegardés avec le jeu PC en anglais : la Vita européenne n'affiche plus aucune sauvegarde si un slot a des métadonnées en français, et `push` refuse ce cas.
 
