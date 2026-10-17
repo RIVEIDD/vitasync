@@ -1,6 +1,10 @@
 # Sauvegardes de référence (données personnelles, binaires) : gardées en local
 Références initiales/
 
+# Fichiers de travail (sauvegardes en cours de conversion) et outils tiers clonés
+travail/
+outils/
+
 # Python
 __pycache__/
 *.py[cod]
