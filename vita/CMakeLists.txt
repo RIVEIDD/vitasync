@@ -43,12 +43,17 @@ add_definitions(-DSQLITE_TEMP_STORE=3)
 add_definitions(-DSQLITE_THREADSAFE=0)
 add_definitions(-DVERSION=\"${VERSION}\")
 add_definitions(-DTITLE_ID=\"${TITLE_ID}\")
+# Port du FTP intégré : 1337 comme VitaShell ; 1340 en développement, quand
+# vitacompanion occupe déjà 1337 (cmake -DVITASYNC_FTP_PORT=1340).
+set(VITASYNC_FTP_PORT 1337 CACHE STRING "Port du serveur FTP de VitaSync")
+add_definitions(-DFTP_PORT=${VITASYNC_FTP_PORT})
 #add_definitions(-DUSE_DEBUG=1)
 #add_definitions(-DDEBUG_IP=\"127.0.0.1\")
 
 set(CMAKE_C_FLAGS "-Wl,-q -Wall -O3 -std=gnu99")
 
 include_directories(
+    extern/libftpvita/libftpvita
     extern/sqlite3
     extern/inih
     extern/vitashell/modules/kernel
@@ -66,6 +71,9 @@ add_executable(${PROJECT_NAME}.elf
     src/main.c
     src/system.c
     src/vita_sqlite.c
+    src/remote.c
+
+    extern/libftpvita/libftpvita/ftpvita.c
 
     extern/sqlite3/sqlite3.c
     extern/inih/ini.c
@@ -96,6 +104,7 @@ target_link_libraries(${PROJECT_NAME}.elf
     -ldebugnet
     -lSceNetCtl_stub
     -lSceNet_stub
+    -lSceRtc_stub
 )
 
 add_dependencies(${PROJECT_NAME}.elf libVitaShellUser_stub_weak.a)

@@ -25,6 +25,7 @@
 #include "file.h"
 #include "font.h"
 #include "input.h"
+#include "remote.h"
 #include "system.h"
 #include "util.h"
 
@@ -1124,6 +1125,8 @@ void draw_screen(ScreenState state, appinfo *curr, appinfo *choose, int slot) {
                     draw_list(curr);
                     break;
             }
+            // VitaSync : état du FTP et de la dernière commande du PC.
+            vita2d_pgf_draw_text(font, 10, 30, WHITE, 1.0, remote_status());
         }
 
         if (state == CONFIG_SCREEN) {
@@ -1388,6 +1391,10 @@ int main() {
     mkdir_p(config.base, 0777);
     mkdir_p("ux0:/data/savemgr", 0777);
 
+    static char ftp_ip[16];
+    static unsigned short ftp_port;
+    remote_start(ftp_ip, &ftp_port);
+
     sceAppMgrUmount("app0:");
     sceAppMgrUmount("savedata0:");
 
@@ -1404,6 +1411,7 @@ int main() {
     while (mainloop() >= 0)
         ;
 
+    remote_stop();
     sceKernelExitProcess(0);
     return 0;
 
