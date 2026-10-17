@@ -33,10 +33,10 @@ class VitaSide:
         title_id: Identifiant du jeu sur la Vita, par exemple ``PCSB00245``.
         path: Dossier des sauvegardes, au format Vita (``ux0:...``). Vu par
             FTP, il est chiffré : on n'y lit ni n'y écrit directement.
-        dump: Dossier où l'utilisateur copie la sauvegarde décryptée
-            (VitaShell, *Open decrypted*), lu par ``vitasync pull``.
-        inbox: Dossier où ``vitasync push`` dépose les fichiers convertis, à
-            coller ensuite dans la sauvegarde avec VitaShell.
+        dump: Copie décryptée de la sauvegarde (slot de Save Manager rempli
+            par *Backup*), lue par ``vitasync pull`` et ``vitasync push``.
+        inbox: Dossier où ``vitasync push`` écrit une sauvegarde complète, à
+            remettre en place avec *Restore* dans Save Manager.
     """
 
     title_id: str

@@ -214,11 +214,9 @@ def run_transfer(args: argparse.Namespace) -> int:
     if args.command == "pull":
         print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
     else:
-        print(f"Prêt dans {game.vita.inbox} : {files}, sce_sys/sdslot.dat")
-        print(
-            f"Dans VitaShell : {game.vita.title_id} > Triangle > Open decrypted, colle ces "
-            "fichiers à l'intérieur (sans remplacer le dossier), puis sors avec Rond."
-        )
+        slot = (game.vita.inbox or "").rstrip("/").rsplit("/", 1)[-1]
+        print(f"Sauvegarde complète prête dans {game.vita.inbox} (slots remplacés : {files})")
+        print(f"Dans Save Manager : {game.name} > {slot} > Restore.")
     return 0
 
 

@@ -171,7 +171,7 @@ def test_push(
 
     assert main(args) == 0
     out = capsys.readouterr().out
-    assert "Open decrypted" in out and "data0007.bin" in out
+    assert "Save Manager : Persona 4 Golden > p4g_in > Restore" in out and "data0007.bin" in out
     assert (fake_vita.root / "p4g_in" / "data0007.bin").read_bytes() == b"vita:sept pc"
 
 

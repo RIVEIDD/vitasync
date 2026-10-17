@@ -30,8 +30,8 @@ def test_fiche_p4g_livree() -> None:
     assert p4g.name == "Persona 4 Golden"
     assert p4g.pc.steam_appid == 1113000
     assert p4g.vita.title_id == "PCSB00245"
-    assert p4g.vita.dump == "ux0:data/p4g_dump"
-    assert p4g.vita.inbox == "ux0:data/p4g_in"
+    assert p4g.vita.dump == "ux0:data/savegames/PCSB00245/SLOT0"
+    assert p4g.vita.inbox == "ux0:data/savegames/PCSB00245/SLOT1"
     assert "p4g" in builtin_manifests()
 
 

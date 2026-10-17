@@ -276,7 +276,7 @@ class VitaFtpClient:
     def remove_tree(self, remote: str) -> None:
         """Supprime récursivement un dossier de la Vita.
 
-        À réserver aux dossiers de transit de VitaSync (comme ``ux0:data/p4g_in``),
+        À réserver aux dossiers de transit de VitaSync (comme le slot 1 de Save Manager),
         après en avoir fait une copie de sécurité.
 
         Args:

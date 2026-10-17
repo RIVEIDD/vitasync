@@ -10,7 +10,9 @@ pc:
 vita:
   title_id: PCSB00245
   path: ux0:user/00/savedata/PCSB00245
-  # Copie décryptée faite à la main (VitaShell, Open decrypted), lue par pull.
-  dump: ux0:data/p4g_dump
-  # Fichiers convertis déposés par push, à coller avec VitaShell.
-  inbox: ux0:data/p4g_in
+  # Slots de Save Manager (config par défaut : base=/data/savegames,
+  # slot_format=%s/SLOT%d). Slot 0 : copie décryptée faite par Backup, lue
+  # par pull. Slot 1 : sauvegarde complète écrite par push, à remettre en
+  # place avec Restore.
+  dump: ux0:data/savegames/PCSB00245/SLOT0
+  inbox: ux0:data/savegames/PCSB00245/SLOT1

@@ -86,7 +86,7 @@ def test_pull_refuse_si_steam_s_ouvre_pendant_le_transfert(
 def test_pull_sans_copie_decryptee(
     fake_vita: FakeVita, steam: SteamConfig, game: GameManifest, store: LocalStore
 ) -> None:
-    with VitaFtpClient(fake_vita.config) as ftp, pytest.raises(SyncError, match="Open decrypted"):
+    with VitaFtpClient(fake_vita.config) as ftp, pytest.raises(SyncError, match="Save Manager"):
         pull(store, ftp, steam, game, [7], steam_running=lambda: False)
 
 
@@ -97,10 +97,11 @@ def test_pull_sans_saveconv(
         pull(store, ftp, replace(steam, p4g_saveconv=None), game, [7], steam_running=lambda: False)
 
 
-def test_push_prepare_le_dossier_de_transit(
+def test_push_prepare_une_sauvegarde_complete(
     fake_vita: FakeVita, steam: SteamConfig, game: GameManifest, store: LocalStore
 ) -> None:
     make_vita_save(fake_vita.root / "p4g_dump", {1: b"un vita", 7: b"sept vita"})
+    (fake_vita.root / "p4g_dump" / "sce_sys" / "param.sfo").write_bytes(b"sfo")
     (fake_vita.root / "p4g_in").mkdir()
     (fake_vita.root / "p4g_in" / "data0003.bin").write_bytes(b"reste d'un ancien push")
 
@@ -108,10 +109,15 @@ def test_push_prepare_le_dossier_de_transit(
         result = push(store, ftp, steam, game, [7])
 
     inbox = fake_vita.root / "p4g_in"
+    # Toute la sauvegarde Vita, sans les restes d'un ancien push, avec le slot 7 remplacé.
     assert sorted(p.relative_to(inbox).as_posix() for p in inbox.rglob("*") if p.is_file()) == [
+        "data0001.bin",
         "data0007.bin",
+        "sce_sys/param.sfo",
         "sce_sys/sdslot.dat",
     ]
+    assert (inbox / "data0001.bin").read_bytes() == b"un vita"
+    assert (inbox / "sce_sys" / "param.sfo").read_bytes() == b"sfo"
     assert (inbox / "data0007.bin").read_bytes() == b"vita:sept pc"
     sdslot = (inbox / "sce_sys" / "sdslot.dat").read_bytes()
     # Le slot 1 garde ses métadonnées Vita, le slot 7 prend celles du PC.
@@ -129,7 +135,7 @@ def test_push_prepare_le_dossier_de_transit(
 def test_push_refuse_sans_copie_de_la_vita(
     fake_vita: FakeVita, steam: SteamConfig, game: GameManifest, store: LocalStore
 ) -> None:
-    with VitaFtpClient(fake_vita.config) as ftp, pytest.raises(SyncError, match="Open decrypted"):
+    with VitaFtpClient(fake_vita.config) as ftp, pytest.raises(SyncError, match="Save Manager"):
         push(store, ftp, steam, game, [7])
 
     assert not (fake_vita.root / "p4g_in").exists()

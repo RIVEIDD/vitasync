@@ -1,5 +1,6 @@
 """Transferts de Persona 4 Golden entre la Vita et Steam (``pull`` et ``push``)."""
 
+import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from vitasync.manifest import GameManifest
 from vitasync.safety import backup_pc_dir, backup_vita_dir, copy_file
 from vitasync.steam import is_steam_running
 from vitasync.store import SaveStore, SaveVersion
+
+BACKUP_HINT = "fais d'abord un Backup de la sauvegarde vers le slot 0 dans Save Manager"
 
 
 class SyncError(Exception):
@@ -88,9 +91,7 @@ def pull(
     app_dir = remote.parent
 
     if not ftp.dir_exists(dump):
-        raise SyncError(
-            f"{dump} introuvable sur la Vita : fais d'abord Open decrypted dans VitaShell"
-        )
+        raise SyncError(f"{dump} introuvable sur la Vita : {BACKUP_HINT}")
     with tempfile.TemporaryDirectory(prefix="vitasync-pull-") as tmp:
         vita_copy = Path(tmp) / "vita"
         ftp.download_dir(dump, vita_copy)
@@ -114,13 +115,13 @@ def push(
     game: GameManifest,
     slots: list[int],
 ) -> TransferResult:
-    """Prépare des slots de Steam pour la Vita, dans le dossier ``vita.inbox``.
+    """Prépare pour la Vita une sauvegarde complète, dans le dossier ``vita.inbox``.
 
     Étapes : enregistrer le dossier Steam, télécharger la copie décryptée
-    actuelle de la Vita (``vita.dump``) comme copie de sécurité, convertir au
-    format Vita en ne remplaçant dans ``sdslot.dat`` que les slots demandés,
-    puis vider et remplir ``vita.inbox``. Il reste à coller ces fichiers dans
-    la sauvegarde avec VitaShell.
+    actuelle de la Vita (``vita.dump``) comme copie de sécurité, partir de
+    cette copie et y remplacer uniquement les slots demandés (``.bin`` et
+    entrées de ``sdslot.dat``), puis vider et remplir ``vita.inbox``. Il
+    reste à restaurer ce dossier avec Save Manager.
 
     Args:
         store: Stockage des versions et des copies de sécurité.
@@ -149,15 +150,19 @@ def push(
     backup = backup_vita_dir(store, game.id, ftp, dump)
     if backup is None:
         raise SyncError(
-            f"{dump} introuvable sur la Vita : fais d'abord Open decrypted dans VitaShell, "
-            "pour garder une copie de la sauvegarde Vita avant de la remplacer"
+            f"{dump} introuvable sur la Vita : {BACKUP_HINT}, pour garder une copie "
+            "de la sauvegarde Vita avant de la remplacer"
         )
     sdslot = backup.files / p4g.SDSLOT
-    vita_sdslot = sdslot.read_bytes() if sdslot.is_file() else None
+    if not sdslot.is_file():
+        raise SyncError(f"{p4g.SDSLOT.as_posix()} manquant dans {dump} : la copie est incomplète")
 
     with tempfile.TemporaryDirectory(prefix="vitasync-push-") as tmp:
+        # Sauvegarde complète : la copie actuelle de la Vita (param.sfo, clés...),
+        # dans laquelle on ne remplace que les slots demandés.
         converted = Path(tmp) / "vita"
-        files = p4g.pc_to_vita(saveconv, source.files, converted, slots, vita_sdslot)
+        shutil.copytree(backup.files, converted)
+        files = p4g.pc_to_vita(saveconv, source.files, converted, slots, sdslot.read_bytes())
         backup_vita_dir(store, game.id, ftp, inbox)
         if ftp.dir_exists(inbox):
             ftp.remove_tree(inbox)
