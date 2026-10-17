@@ -273,6 +273,34 @@ class VitaFtpClient:
         except ftplib.all_errors as exc:
             raise TransferError(f"Impossible de créer {ftp_path} ({exc})") from exc
 
+    def remove_tree(self, remote: str) -> None:
+        """Supprime récursivement un dossier de la Vita.
+
+        À réserver aux dossiers de transit de VitaSync (comme ``ux0:data/p4g_in``),
+        après en avoir fait une copie de sécurité.
+
+        Args:
+            remote: Dossier distant à supprimer, au format Vita ou FTP.
+
+        Raises:
+            TransferError: Si une suppression échoue.
+        """
+        ftp_path = to_ftp_path(remote)
+        for entry in self.list_dir(ftp_path):
+            child = posixpath.join(ftp_path, entry.name)
+            if entry.is_dir:
+                self.remove_tree(child)
+                continue
+            try:
+                self._conn.delete(child)
+            except ftplib.all_errors as exc:
+                raise TransferError(f"Impossible de supprimer {child} ({exc})") from exc
+        try:
+            self._conn.cwd("/")
+            self._conn.rmd(ftp_path)
+        except ftplib.all_errors as exc:
+            raise TransferError(f"Impossible de supprimer {ftp_path} ({exc})") from exc
+
     def upload_dir(self, local: Path, remote: str) -> list[str]:
         """Envoie récursivement un dossier local vers la Vita.
 

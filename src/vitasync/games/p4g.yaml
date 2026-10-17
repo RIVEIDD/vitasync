@@ -10,3 +10,7 @@ pc:
 vita:
   title_id: PCSB00245
   path: ux0:user/00/savedata/PCSB00245
+  # Copie décryptée faite à la main (VitaShell, Open decrypted), lue par pull.
+  dump: ux0:data/p4g_dump
+  # Fichiers convertis déposés par push, à coller avec VitaShell.
+  inbox: ux0:data/p4g_in

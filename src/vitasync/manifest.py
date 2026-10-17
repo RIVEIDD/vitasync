@@ -31,11 +31,18 @@ class VitaSide:
 
     Attributes:
         title_id: Identifiant du jeu sur la Vita, par exemple ``PCSB00245``.
-        path: Dossier des sauvegardes, au format Vita (``ux0:...``).
+        path: Dossier des sauvegardes, au format Vita (``ux0:...``). Vu par
+            FTP, il est chiffré : on n'y lit ni n'y écrit directement.
+        dump: Dossier où l'utilisateur copie la sauvegarde décryptée
+            (VitaShell, *Open decrypted*), lu par ``vitasync pull``.
+        inbox: Dossier où ``vitasync push`` dépose les fichiers convertis, à
+            coller ensuite dans la sauvegarde avec VitaShell.
     """
 
     title_id: str
     path: str
+    dump: str | None = None
+    inbox: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,12 @@ def _require_str(data: dict[str, Any], key: str, where: str) -> str:
     if not isinstance(value, str) or not value:
         raise ManifestError(f"{where} : « {key} » doit être un texte non vide")
     return value
+
+
+def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:
+    if data.get(key) is None:
+        return None
+    return _require_str(data, key, where)
 
 
 def _require_section(data: dict[str, Any], key: str, where: str) -> dict[str, Any]:
@@ -106,6 +119,8 @@ def parse_manifest(text: str, where: str = "fiche") -> GameManifest:
         vita=VitaSide(
             title_id=_require_str(vita, "title_id", where),
             path=_require_str(vita, "path", where),
+            dump=_optional_str(vita, "dump", where),
+            inbox=_optional_str(vita, "inbox", where),
         ),
     )
 

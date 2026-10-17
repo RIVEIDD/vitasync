@@ -127,3 +127,13 @@ def test_transfert_interrompu_ne_laisse_pas_de_fichier(
 
     assert local.read_bytes() == b"ancienne version"
     assert list(local.parent.iterdir()) == [local]
+
+
+def test_remove_tree(fake_vita: FakeVita) -> None:
+    make_save(fake_vita.root)
+
+    with VitaFtpClient(fake_vita.config) as ftp:
+        ftp.remove_tree("/p4g_dump")
+        assert not ftp.dir_exists("/p4g_dump")
+
+    assert list(fake_vita.root.iterdir()) == []

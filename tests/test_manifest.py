@@ -21,6 +21,7 @@ def test_parse_manifest_sans_steam() -> None:
     assert manifest.pc.path == "Saves/Demo"
     assert manifest.pc.steam_appid is None
     assert manifest.vita.path == "ux0:data/demo"
+    assert manifest.vita.dump is None
 
 
 def test_fiche_p4g_livree() -> None:
@@ -29,6 +30,8 @@ def test_fiche_p4g_livree() -> None:
     assert p4g.name == "Persona 4 Golden"
     assert p4g.pc.steam_appid == 1113000
     assert p4g.vita.title_id == "PCSB00245"
+    assert p4g.vita.dump == "ux0:data/p4g_dump"
+    assert p4g.vita.inbox == "ux0:data/p4g_in"
     assert "p4g" in builtin_manifests()
 
 
