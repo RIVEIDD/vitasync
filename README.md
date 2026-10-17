@@ -16,7 +16,7 @@ Phase 3 (modèle et sécurité) : fiches de jeu YAML, stockage versionné des sa
 
 Phase 4 (jeu en copie directe) : reportée, P4G passe en premier.
 
-Phase 5 (Persona 4 Golden) : commandes `vitasync pull` et `vitasync push`, conversion via p4g-saveconv, vérification des MD5 et régénération de `remotecache.vdf`. L'étape *Open decrypted* de VitaShell reste manuelle.
+Phase 5 (Persona 4 Golden) : commandes `vitasync pull` et `vitasync push`, conversion via p4g-saveconv, vérification des MD5 et régénération de `remotecache.vdf`. Côté Vita, deux manipulations dans Save Manager (*Backup* slot 0, *Restore* slot 1) remplacent la navigation dans VitaShell.
 
 ## Procédure manuelle validée (P4G)
 
@@ -105,35 +105,39 @@ uv run vitasync restore p4g 20261017-142300-000000 --to "C:\chemin\vers\remote"
 
 `--slots` est obligatoire : `7`, `1,7`, `system` (pour `system.bin`) ou `all`.
 
+Côté Vita, VitaSync s'appuie sur [Save Manager](https://github.com/d3m3vilurr/vita-savemgr) (réglages par défaut) : le slot 0 reçoit la copie décryptée de la sauvegarde, le slot 1 la sauvegarde préparée par `push`. Le FTP reste celui de VitaShell.
+
 **Vita → PC (`pull`)**
 
-1. Dans VitaShell : `PCSB00245` → Triangle → *Open decrypted*, copier le contenu dans `ux0:data/p4g_dump`.
-2. Fermer Steam complètement, puis :
+1. Dans Save Manager : Persona 4 Golden → slot 0 → *Backup* (remplace l'ancienne copie).
+2. Ouvrir VitaShell et lancer le FTP (Select). Fermer Steam complètement, puis :
 
    ```bash
    uv run vitasync pull p4g --slots 7
    ```
 
-   VitaSync télécharge `p4g_dump`, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
+   VitaSync télécharge `ux0:data/savegames/PCSB00245/SLOT0`, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
 
 **PC → Vita (`push`)**
 
-1. Rafraîchir `ux0:data/p4g_dump` comme ci-dessus : c'est la copie de sécurité de la sauvegarde Vita, et `push` refuse de tourner sans elle.
-2. Lancer :
+1. Dans Save Manager : slot 0 → *Backup*, comme ci-dessus. C'est la copie de sécurité de la sauvegarde Vita, et la base de la sauvegarde envoyée : `push` refuse de tourner sans elle.
+2. Dans VitaShell, lancer le FTP, puis :
 
    ```bash
    uv run vitasync push p4g --slots 7
    ```
 
-   VitaSync convertit les slots Steam et dépose dans `ux0:data/p4g_in` les `.bin` demandés et un `sce_sys/sdslot.dat` où seuls ces slots sont remplacés.
-3. Dans VitaShell : `PCSB00245` → Triangle → *Open decrypted*, coller le contenu de `p4g_in` à l'intérieur (sans remplacer le dossier), puis sortir avec Rond.
+   VitaSync part de la copie du slot 0, y remplace uniquement les slots demandés (`.bin` convertis et entrées de `sce_sys/sdslot.dat`), et écrit le résultat complet dans `ux0:data/savegames/PCSB00245/SLOT1`.
+3. Dans Save Manager : Persona 4 Golden → slot 1 → *Restore*.
+
+Les slots Steam doivent avoir été sauvegardés avec le jeu PC en anglais : la Vita européenne n'affiche plus aucune sauvegarde si un slot a des métadonnées en français, et `push` refuse ce cas.
 
 Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
 ## Règles
 
 - Jamais d'écrasement sans copie de sauvegarde préalable.
-- Côté Vita, ne remplacer que les fichiers de slot, jamais tout le dossier.
+- Côté Vita, ne jamais toucher au dossier chiffré directement (FTP, copier-coller hors *Open decrypted*) : passer par Save Manager. Seuls les slots demandés changent, le reste de la sauvegarde est repris tel quel de la copie Vita.
 - Injection côté Steam uniquement avec Steam fermé.
 
 ## Arborescence locale

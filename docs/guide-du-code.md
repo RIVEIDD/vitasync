@@ -176,7 +176,7 @@ with VitaFtpClient(config) as ftp:
 - `download_file(remote, local)` écrit d'abord dans `fichier.part`, puis renomme une fois le transfert complet. Si le transfert est coupé, le `.part` est supprimé et l'ancien fichier local reste intact. C'est l'application de la règle « jamais d'écrasement sans filet ».
 - `download_dir` et `upload_dir` parcourent un dossier récursivement : pour chaque entrée, un fichier est transféré et un sous-dossier provoque un nouvel appel de la même fonction.
 - `dir_exists(remote)` teste si un dossier existe en essayant d'y entrer (`CWD`). `make_dir(remote)` s'en sert pour ne créer le dossier (`MKD`) que si besoin : on peut donc renvoyer deux fois le même dossier.
-- `remove_tree(remote)` supprime un dossier et tout son contenu. Il ne sert qu'à vider `ux0:data/p4g_in`, le dossier de transit de `push`, après en avoir fait une copie : sinon, des fichiers d'un ancien `push` y traîneraient et seraient collés par erreur. Il envoie `DELE` avec `voidcmd`, qui accepte toute réponse 2xx : VitaShell répond « 226 » là où `ftplib.delete` exige « 250 ».
+- `remove_tree(remote)` supprime un dossier et tout son contenu. Il ne sert qu'à vider le slot 1 de Save Manager, où `push` écrit, après en avoir fait une copie : sinon, des fichiers d'un ancien `push` y traîneraient et seraient collés par erreur. Il envoie `DELE` avec `voidcmd`, qui accepte toute réponse 2xx : VitaShell répond « 226 » là où `ftplib.delete` exige « 250 ».
 
 **Pourquoi.** Toute la complexité réseau reste dans ce fichier. Les phases suivantes appelleront `download_dir` et `upload_dir` sans se soucier du FTP.
 
@@ -289,7 +289,7 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 
 `pull(store, ftp, steam, jeu, slots)`, de la Vita vers Steam :
 1. refuse si Steam est ouvert ;
-2. télécharge `ux0:data/p4g_dump` (la copie *Open decrypted*) et l'enregistre dans le stockage (origine `vita`) ;
+2. télécharge le slot 0 de Save Manager (`vita.dump`, la copie décryptée faite par *Backup*) et l'enregistre dans le stockage (origine `vita`) ;
 3. convertit au format PC et vérifie les MD5 ;
 4. revérifie que Steam est toujours fermé ;
 5. copie tout le dossier Steam `1113000` (avec `remote` et `remotecache.vdf`) dans le stockage (origine `backup-pc`) ;
@@ -297,17 +297,17 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 
 `push(store, ftp, steam, jeu, slots)`, de Steam vers la Vita :
 1. enregistre le dossier Steam `remote` (origine `pc`) ;
-2. télécharge `ux0:data/p4g_dump` comme copie de sécurité de la sauvegarde Vita (origine `backup-vita`), et refuse s'il n'existe pas ;
-3. convertit au format Vita, en fusionnant `sdslot.dat` avec celui de la copie Vita ;
-4. copie puis vide `ux0:data/p4g_in`, et y dépose les fichiers convertis.
+2. télécharge le slot 0 de Save Manager comme copie de sécurité de la sauvegarde Vita (origine `backup-vita`), et refuse s'il n'existe pas ;
+3. part de cette copie complète (avec `param.sfo`, les clés de `sce_sys`...) et n'y remplace que les slots demandés : `.bin` convertis et entrées de `sdslot.dat` ;
+4. copie puis vide le slot 1 de Save Manager (`vita.inbox`), et y écrit cette sauvegarde complète.
 
-Il te reste ensuite à coller le contenu de `p4g_in` dans la sauvegarde avec VitaShell. VitaSync ne peut pas le faire : par FTP, la sauvegarde est chiffrée.
+Il te reste ensuite à faire *Restore* du slot 1 dans Save Manager. VitaSync ne peut pas écrire lui-même dans la sauvegarde : par FTP, elle est chiffrée, et seule une appli sur la Vita (Save Manager, VitaShell) sait la monter décryptée. Avant Save Manager, on collait les fichiers à la main dans VitaShell ; un collage hors *Open decrypted* a abîmé la sauvegarde lors des tests, d'où ce choix.
 
 Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouvert ou fermé.
 
 **Pourquoi.** L'ordre des étapes est la partie la plus importante : la conversion et toutes les vérifications ont lieu **avant** la première écriture, et la copie de sécurité juste avant elle. Si quelque chose échoue en route, la destination n'a pas été touchée.
 
-**Comment le maintenir.** Garde cet ordre : lire, convertir, vérifier, copier la destination, écrire. Une limite à connaître : `push` fait confiance à `p4g_dump`. Si cette copie est ancienne, la sauvegarde de sécurité et les métadonnées des autres slots le seront aussi. D'où la consigne de rafraîchir `p4g_dump` avant chaque `push`.
+**Comment le maintenir.** Garde cet ordre : lire, convertir, vérifier, copier la destination, écrire. Une limite à connaître : `push` fait confiance au slot 0. Si cette copie est ancienne, la sauvegarde envoyée reprendra les anciens autres slots. D'où la consigne de refaire *Backup* juste avant chaque `push`.
 
 ### `cli.py`
 
@@ -395,7 +395,7 @@ Noms de fichiers et `--slots`, `check_binslot` (fichier correct, `.bin` modifié
 
 ### `test_p4g_sync.py`
 
-`pull` contre le faux serveur, un faux dossier Steam et le faux outil : seul le slot demandé change, le dossier Steam et `remotecache.vdf` sont copiés avant, rien n'est écrit si Steam est ouvert (même s'il s'ouvre en cours de route) ou si `p4g_dump` manque. `push` : `p4g_in` est vidé des restes d'un ancien `push`, ne contient que le slot demandé et `sdslot.dat`, garde les métadonnées Vita des autres slots, et rien n'est envoyé sans copie de la Vita.
+`pull` contre le faux serveur, un faux dossier Steam et le faux outil : seul le slot demandé change, le dossier Steam et `remotecache.vdf` sont copiés avant, rien n'est écrit si Steam est ouvert (même s'il s'ouvre en cours de route) ou si la copie Vita manque. `push` : le dossier d'arrivée est vidé des restes d'un ancien `push` et reçoit la sauvegarde Vita complète (autres slots, `param.sfo`) où seul le slot demandé est remplacé ; `sdslot.dat` garde les métadonnées Vita des autres slots, et rien n'est envoyé sans copie de la Vita. Les tests utilisent `/p4g_dump` et `/p4g_in` à la place des slots de Save Manager, dont le chemin contient `ux0:`.
 
 ### `test_cli.py`
 
