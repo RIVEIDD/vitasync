@@ -87,7 +87,34 @@ def build_parser() -> argparse.ArgumentParser:
         )
         transfer.add_argument("--store", type=Path, default=None, help=store_help)
         add_connection_options(transfer)
+
+    status = subparsers.add_parser(
+        "status", help="compare le temps de jeu de chaque slot entre Steam et la Vita"
+    )
+    status.add_argument("game", help="identifiant du jeu, par exemple p4g")
+    add_connection_options(status)
+
+    sync = subparsers.add_parser(
+        "sync", help="copie les slots les plus avancés dans le bon sens (pull ou push)"
+    )
+    sync.add_argument("game", help="identifiant du jeu, par exemple p4g")
+    sync.add_argument("--store", type=Path, default=None, help=store_help)
+    add_connection_options(sync)
     return parser
+
+
+def format_play_time(seconds: int | None) -> str:
+    """Formate un temps de jeu en ``h:mm:ss``, ou ``-`` pour un slot vide.
+
+    Args:
+        seconds: Temps de jeu en secondes.
+
+    Returns:
+        Le texte à afficher.
+    """
+    if seconds is None:
+        return "-"
+    return f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
 
 
 def add_connection_options(parser: argparse.ArgumentParser) -> None:
@@ -182,15 +209,31 @@ def run_transfer(args: argparse.Namespace) -> int:
         0 en cas de succès, 1 en cas d'erreur (rien n'est alors écrit à la
         destination).
     """
+    command = args.command
     try:
-        slots = parse_slots(args.slots)
+        # Les slots sont vérifiés d'abord : une faute de frappe ne coûte pas de connexion.
+        slots = parse_slots(args.slots) if command in ("pull", "push") else []
         game = find_game(args.game)
         if game.adapter != "p4g":
             raise SyncError(f"{game.name} : adaptateur {game.adapter} pas encore pris en charge")
         steam = load_steam_config(args.config or default_config_path())
-        store = open_store(args)
         with VitaFtpClient(resolve_config(args)) as ftp:
-            if args.command == "pull":
+            if command == "status":
+                states = p4g_sync.status(ftp, steam, game)
+                print_status(states)
+                return 0
+            if command == "sync":
+                direction, slots = p4g_sync.plan_sync(p4g_sync.status(ftp, steam, game))
+                if direction is None:
+                    print("Déjà synchronisé : tous les slots sont identiques.")
+                    return 0
+                command = direction
+                print(
+                    f"Plus avancé sur {'PC' if command == 'push' else 'Vita'} : {command} "
+                    f"des slots {','.join(map(str, slots))}."
+                )
+            store = open_store(args)
+            if command == "pull":
                 result = p4g_sync.pull(store, ftp, steam, game, slots)
             else:
                 result = p4g_sync.push(store, ftp, steam, game, slots)
@@ -211,7 +254,7 @@ def run_transfer(args: argparse.Namespace) -> int:
     print(f"Version d'origine enregistrée : {result.source.id}")
     if result.backup is not None:
         print(f"Copie de sécurité de la destination : {result.backup.id}")
-    if args.command == "pull":
+    if command == "pull":
         if result.automatic:
             print("Backup fait par l'appli VitaSync sur la Vita.")
         print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
@@ -222,6 +265,21 @@ def run_transfer(args: argparse.Namespace) -> int:
         print(f"Sauvegarde complète prête dans {game.vita.inbox} (slots remplacés : {files})")
         print(f"Dans Save Manager : {game.name} > {slot} > Restore.")
     return 0
+
+
+def print_status(states: list[p4g_sync.SlotState]) -> None:
+    """Affiche le tableau de ``vitasync status``.
+
+    Args:
+        states: Avancement de chaque slot.
+    """
+    labels = {"same": "identiques", "pc": "PC", "vita": "Vita"}
+    print(f"{'Slot':>4}  {'PC':>9}  {'Vita':>9}  Plus avancé")
+    for state in states:
+        print(
+            f"{state.slot:>4}  {format_play_time(state.pc):>9}  "
+            f"{format_play_time(state.vita):>9}  {labels[state.newer]}"
+        )
 
 
 def run_restore(args: argparse.Namespace) -> int:
@@ -316,7 +374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_history(args)
     if args.command == "restore":
         return run_restore(args)
-    if args.command in ("pull", "push"):
+    if args.command in ("pull", "push", "status", "sync"):
         return run_transfer(args)
     parser.print_help()
     return 0

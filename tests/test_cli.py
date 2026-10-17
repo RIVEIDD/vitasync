@@ -178,3 +178,23 @@ def test_push(
 def test_slots_invalides(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["pull", "p4g", "--slots", "42", "--config", str(tmp_path / "c.toml")]) == 1
     assert "slot invalide" in capsys.readouterr().err
+
+
+def test_status_et_sync_deja_synchronise(
+    fake_vita: FakeVita,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config, _ = transfer_setup(fake_vita, tmp_path, monkeypatch)
+
+    assert main(["status", "p4g", "--config", str(config)]) == 0
+    assert capsys.readouterr().out.startswith("Slot")
+    args = ["sync", "p4g", "--config", str(config), "--store", str(tmp_path / "s")]
+    assert main(args) == 0
+    assert "Déjà synchronisé" in capsys.readouterr().out
+
+
+def test_format_play_time() -> None:
+    assert cli.format_play_time(47 * 3600 + 3 * 60 + 9) == "47:03:09"
+    assert cli.format_play_time(None) == "-"

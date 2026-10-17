@@ -2,14 +2,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from fake_saveconv import install, make_pc_save, make_vita_save
+from fake_saveconv import install, make_binslot, make_pc_save, make_sdslot, make_vita_save
 from fake_vita import FakeVita
 
 from vitasync import p4g
 from vitasync.config import SteamConfig
 from vitasync.ftp import VitaFtpClient
 from vitasync.manifest import GameManifest, find_game
-from vitasync.p4g_sync import SyncError, pull, push
+from vitasync.p4g_sync import SlotState, SyncError, plan_sync, pull, push, status
 from vitasync.store import LocalStore
 
 
@@ -192,3 +192,38 @@ def test_sans_l_appli_rien_n_est_automatique(
         result = push(store, ftp, steam, game, [7])
 
     assert not result.automatic
+
+
+def test_status_compare_le_temps_de_jeu(
+    fake_vita: FakeVita, steam: SteamConfig, game: GameManifest
+) -> None:
+    pc = remote(steam)
+    for slot, played in ((1, b"0:10:00"), (7, b"0:30:00")):
+        (pc / p4g.bin_name(slot)).write_bytes(b"x")
+        (pc / f"{p4g.bin_name(slot)}slot").write_bytes(
+            make_binslot(b"x", b"\nPlay Time:" + played + b"\n")
+        )
+    dump = make_vita_save(fake_vita.root / "p4g_dump", {1: b"un", 7: b"sept"})
+    (dump / p4g.SDSLOT).write_bytes(
+        make_sdslot(
+            {1: b"\nPlay Time:0:10:00\n", 7: b"\nPlay Time:0:20:00\n", 8: b"\nPlay Time:1:00:00\n"}
+        )
+    )
+
+    with VitaFtpClient(fake_vita.config) as ftp:
+        states = status(ftp, steam, game)
+
+    assert [(s.slot, s.pc, s.vita, s.newer) for s in states] == [
+        (1, 600, 600, "same"),
+        (7, 1800, 1200, "pc"),
+        (8, None, 3600, "vita"),
+    ]
+
+
+def test_plan_sync() -> None:
+    same = SlotState(1, 600, 600)
+    assert plan_sync([same]) == (None, [])
+    assert plan_sync([same, SlotState(7, 1800, 1200)]) == ("push", [7])
+    assert plan_sync([SlotState(8, None, 3600), SlotState(2, 10, 20)]) == ("pull", [8, 2])
+    with pytest.raises(SyncError, match="Conflit"):
+        plan_sync([SlotState(7, 1800, 1200), SlotState(8, None, 3600)])

@@ -8,6 +8,7 @@ d'après le format documenté dans le README de cet outil.
 
 import hashlib
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,10 @@ SDSLOT_ENTRY_SIZE = 0x400
 BINSLOT_MAGIC = b"SAVE0001"
 BINSLOT_SALT = b"P4GOLDEN"
 STEAM_APPID = "1113000"
+
+# Ligne « Play Time:47:23:53 » des métadonnées (ou sa traduction, comme
+# « Temps de jeu : 47:27:58 ») : on ne garde que les chiffres.
+PLAY_TIME = re.compile(rb"\n[^\n:]*:\s*(\d+):(\d\d):(\d\d)\n")
 
 
 class ConversionError(Exception):
@@ -320,3 +325,60 @@ def write_remotecache(remote_dir: Path, vdf_path: Path) -> None:
     partial = vdf_path.with_name(vdf_path.name + ".part")
     partial.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
     partial.replace(vdf_path)
+
+
+def play_time(metadata: bytes) -> int | None:
+    """Lit le temps de jeu dans les métadonnées d'un slot.
+
+    Args:
+        metadata: Métadonnées d'un ``.binslot`` (à partir de 0x28) ou entrée
+            de ``sdslot.dat``.
+
+    Returns:
+        Le temps de jeu en secondes, ou ``None`` s'il n'y en a pas
+        (``system.bin``, slot vide).
+    """
+    match = PLAY_TIME.search(metadata)
+    if match is None:
+        return None
+    hours, minutes, seconds = (int(group) for group in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def pc_play_times(remote_dir: Path) -> dict[int, int]:
+    """Temps de jeu de chaque slot de la sauvegarde Steam.
+
+    Args:
+        remote_dir: Dossier Steam ``remote``.
+
+    Returns:
+        Le temps de jeu en secondes, par numéro de slot (1 à 16).
+    """
+    times: dict[int, int] = {}
+    for slot in range(1, MAX_SLOT + 1):
+        binslot = remote_dir / f"{bin_name(slot)}slot"
+        if binslot.is_file():
+            value = play_time(binslot.read_bytes()[0x28:])
+            if value is not None:
+                times[slot] = value
+    return times
+
+
+def vita_play_times(sdslot: bytes) -> dict[int, int]:
+    """Temps de jeu de chaque slot actif d'un ``sdslot.dat`` Vita.
+
+    Args:
+        sdslot: Contenu de ``sce_sys/sdslot.dat``.
+
+    Returns:
+        Le temps de jeu en secondes, par numéro de slot (1 à 16).
+    """
+    times: dict[int, int] = {}
+    for slot in range(1, MAX_SLOT + 1):
+        if len(sdslot) <= SDSLOT_ACTIVE_OFFSET + slot or not sdslot[SDSLOT_ACTIVE_OFFSET + slot]:
+            continue
+        start = SDSLOT_ENTRY_OFFSET + slot * SDSLOT_ENTRY_SIZE
+        value = play_time(sdslot[start : start + SDSLOT_ENTRY_SIZE])
+        if value is not None:
+            times[slot] = value
+    return times

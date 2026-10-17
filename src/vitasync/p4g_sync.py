@@ -203,3 +203,94 @@ def push(
     return TransferResult(
         files=files, source=source, backup=backup, automatic=inbox_slot is not None
     )
+
+
+@dataclass(frozen=True)
+class SlotState:
+    """Avancement d'un slot de chaque côté.
+
+    Attributes:
+        slot: Numéro du slot (1 à 16).
+        pc: Temps de jeu côté Steam en secondes, ou ``None`` si le slot est vide.
+        vita: Temps de jeu côté Vita en secondes, ou ``None`` si le slot est vide.
+    """
+
+    slot: int
+    pc: int | None
+    vita: int | None
+
+    @property
+    def newer(self) -> str:
+        """``pc``, ``vita`` ou ``same`` selon le côté le plus avancé."""
+        if self.pc == self.vita:
+            return "same"
+        if self.vita is None or (self.pc is not None and self.pc > self.vita):
+            return "pc"
+        return "vita"
+
+
+def status(ftp: VitaFtpClient, steam: SteamConfig, game: GameManifest) -> list[SlotState]:
+    """Compare le temps de jeu de chaque slot entre Steam et la Vita.
+
+    Le temps de jeu ne fait qu'augmenter au fil d'une partie : le côté qui en
+    a le plus est le plus récent. Les dates des fichiers ne servent pas,
+    l'horloge de la Vita n'étant pas fiable. Avec l'appli VitaSync, la copie
+    du slot 0 est d'abord rafraîchie par un Backup.
+
+    Args:
+        ftp: Connexion ouverte à la Vita.
+        steam: Emplacements côté PC.
+        game: Fiche du jeu.
+
+    Returns:
+        Un état par slot présent d'un côté ou de l'autre, trié par numéro.
+
+    Raises:
+        SyncError: Si la copie décryptée de la Vita est absente.
+        TransferError: Si le téléchargement échoue.
+    """
+    dump = _vita_dir(game.vita.dump, "dump", game)
+    dump_slot = _app_slot(ftp, dump)
+    if dump_slot is not None:
+        ftp.save_backup(game.vita.title_id, dump_slot)
+    if not ftp.dir_exists(dump):
+        raise SyncError(f"{dump} introuvable sur la Vita : {BACKUP_HINT}")
+    with tempfile.TemporaryDirectory(prefix="vitasync-status-") as tmp:
+        sdslot = Path(tmp) / "sdslot.dat"
+        ftp.download_file(f"{dump.rstrip('/')}/{p4g.SDSLOT.as_posix()}", sdslot)
+        vita = p4g.vita_play_times(sdslot.read_bytes())
+    pc = p4g.pc_play_times(steam.userdata / game.pc.path)
+    return [
+        SlotState(slot, pc.get(slot), vita.get(slot)) for slot in sorted(pc.keys() | vita.keys())
+    ]
+
+
+def plan_sync(states: list[SlotState]) -> tuple[str | None, list[int]]:
+    """Choisit le sens de la synchronisation et les slots à copier.
+
+    Args:
+        states: Résultat de :func:`status`.
+
+    Returns:
+        ``("push", slots)`` si seul le PC a des slots plus avancés,
+        ``("pull", slots)`` si seule la Vita en a, ``(None, [])`` si tout est
+        déjà identique.
+
+    Raises:
+        SyncError: Si certains slots sont plus avancés sur PC et d'autres sur
+            la Vita : c'est à l'utilisateur de trancher.
+    """
+    pc = [state.slot for state in states if state.newer == "pc"]
+    vita = [state.slot for state in states if state.newer == "vita"]
+    if pc and vita:
+        raise SyncError(
+            "Conflit : slots plus avancés sur PC "
+            f"({', '.join(map(str, pc))}) et sur Vita ({', '.join(map(str, vita))}). "
+            f"Choisis toi-même : vitasync push --slots {','.join(map(str, pc))} "
+            f"et/ou vitasync pull --slots {','.join(map(str, vita))}"
+        )
+    if pc:
+        return "push", pc
+    if vita:
+        return "pull", vita
+    return None, []

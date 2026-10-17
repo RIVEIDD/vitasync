@@ -156,3 +156,20 @@ def test_pc_to_vita_refuse_un_slot_sauvegarde_en_francais(tmp_path: Path) -> Non
     with pytest.raises(ConversionError, match="LANG5"):
         p4g.pc_to_vita(install(tmp_path / "tool"), pc, tmp_path / "out", [7], None)
     assert not (tmp_path / "out").exists()
+
+
+def test_play_time_anglais_et_francais() -> None:
+    assert p4g.play_time(b"Name:Yu\nPlay Time:47:23:53\nLANG1\n") == 47 * 3600 + 23 * 60 + 53
+    assert p4g.play_time("Lieu\xa0:Centre\nTemps de jeu\xa0:1:02:03\n".encode()) == 3723
+    assert p4g.play_time(b"SAVE DATA\nSYSTEM DATA\n") is None
+
+
+def test_play_times_pc_et_vita(tmp_path: Path) -> None:
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    (remote / "data0007.binslot").write_bytes(make_binslot(b"x", b"\nPlay Time:0:00:42\n"))
+    (remote / "system.binslot").write_bytes(make_binslot(b"x", b"SYSTEM DATA"))
+    assert p4g.pc_play_times(remote) == {7: 42}
+
+    sdslot = make_sdslot({1: b"\nPlay Time:0:01:00\n", 2: b"vide"})
+    assert p4g.vita_play_times(sdslot) == {1: 60}
