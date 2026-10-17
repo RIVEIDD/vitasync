@@ -1,6 +1,6 @@
 # Guide du code VitaSync
 
-Ce guide passe en revue chaque fichier écrit pendant les phases 1 et 2 : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt au commit `6de2c51`.
+Ce guide passe en revue chaque fichier écrit pendant les phases 1 à 3 : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt à la fin de la phase 3.
 
 ## Vue d'ensemble
 
@@ -17,20 +17,29 @@ VitaPcSynchro/
 │   ├── py.typed          marqueur « ce paquet est typé »
 │   ├── cli.py            la commande vitasync et ses sous-commandes
 │   ├── config.py         lecture du fichier de configuration
-│   └── ftp.py            dialogue FTP avec VitaShell
+│   ├── ftp.py            dialogue FTP avec VitaShell
+│   ├── manifest.py       lecture des fiches de jeu
+│   ├── games/            les fiches de jeu YAML (p4g.yaml)
+│   ├── store.py          stockage versionné des sauvegardes
+│   └── safety.py         écritures précédées d'une copie de sécurité
 └── tests/                les tests automatiques (pytest)
     ├── conftest.py       « fixtures » partagées entre tests
     ├── fake_vita.py      faux serveur FTP qui imite la Vita
     ├── test_cli.py       tests de la commande
     ├── test_config.py    tests de la configuration
-    └── test_ftp.py       tests du client FTP
+    ├── test_ftp.py       tests du client FTP
+    ├── test_manifest.py  tests des fiches de jeu
+    ├── test_store.py     tests du stockage
+    └── test_safety.py    tests des copies de sécurité
 ```
 
 Le chemin d'une commande, de haut en bas : `vitasync ls ux0:data` → `cli.py` lit les arguments → `config.py` fournit l'IP et le port → `ftp.py` se connecte à la Vita et liste le dossier → `cli.py` affiche le résultat.
 
+Et pour `vitasync restore p4g <version> --to <dossier>` : `cli.py` → `manifest.py` vérifie que le jeu existe → `store.py` retrouve la version → `safety.py` copie d'abord le dossier cible dans le stockage, puis y écrit les fichiers de la version.
+
 Chaque module a une seule responsabilité. `ftp.py` ne sait rien de la ligne de commande et `cli.py` ne sait rien du protocole FTP. C'est ce qui permettra, plus tard, de réutiliser le client FTP dans `vitasync sync` sans rien réécrire.
 
-Ordre de lecture conseillé : `config.py`, puis `ftp.py`, puis `cli.py`, puis les tests.
+Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, `safety.py`, puis `cli.py` et les tests.
 
 ---
 
@@ -40,7 +49,7 @@ Ordre de lecture conseillé : `config.py`, puis `ftp.py`, puis `cli.py`, puis le
 
 **Ce qu'il fait.** C'est la carte d'identité du projet, au format standard Python. Il contient :
 
-- `[project]` : nom, version (`0.1.0`), version minimale de Python (3.12) et dépendances d'exécution. Il n'y en a aucune pour l'instant : tout le code utilise la bibliothèque standard (`ftplib`, `tomllib`, `argparse`).
+- `[project]` : nom, version (`0.1.0`), version minimale de Python (3.12) et dépendances d'exécution. Une seule : PyYAML, pour lire les fiches de jeu. Le reste utilise la bibliothèque standard (`ftplib`, `tomllib`, `argparse`, `shutil`). `types-pyyaml`, dans les outils de dev, donne à mypy les types de PyYAML.
 - `[project.scripts]` : la ligne `vitasync = "vitasync.cli:main"` crée la commande `vitasync`. Quand tu la tapes, Python appelle la fonction `main` du fichier `cli.py`.
 - `[build-system]` : l'outil qui fabrique le paquet (hatchling). Tu n'as pas à y toucher.
 - `[dependency-groups] dev` : les outils de développement (ruff, mypy, pytest, pyftpdlib). Ils sont installés pour toi, mais pas pour quelqu'un qui installerait seulement VitaSync.
@@ -156,7 +165,7 @@ with VitaFtpClient(config) as ftp:
 - `list_dir(path)` se place dans le dossier (`CWD`), demande `LIST` et renvoie les entrées triées par nom.
 - `download_file(remote, local)` écrit d'abord dans `fichier.part`, puis renomme une fois le transfert complet. Si le transfert est coupé, le `.part` est supprimé et l'ancien fichier local reste intact. C'est l'application de la règle « jamais d'écrasement sans filet ».
 - `download_dir` et `upload_dir` parcourent un dossier récursivement : pour chaque entrée, un fichier est transféré et un sous-dossier provoque un nouvel appel de la même fonction.
-- `make_dir(remote)` teste si le dossier existe (`CWD`) et ne le crée (`MKD`) que si besoin. On peut donc renvoyer deux fois le même dossier.
+- `dir_exists(remote)` teste si un dossier existe en essayant d'y entrer (`CWD`). `make_dir(remote)` s'en sert pour ne créer le dossier (`MKD`) que si besoin : on peut donc renvoyer deux fois le même dossier.
 
 **Pourquoi.** Toute la complexité réseau reste dans ce fichier. Les phases suivantes appelleront `download_dir` et `upload_dir` sans se soucier du FTP.
 
@@ -165,6 +174,76 @@ with VitaFtpClient(config) as ftp:
 - Ajoute toujours un test dans `tests/test_ftp.py`, contre le faux serveur.
 - Retiens que VitaShell ne sert qu'un client à la fois : ne jamais ouvrir deux `VitaFtpClient` en même temps.
 
+### `manifest.py` et `games/`
+
+**Ce qu'il fait.** Chaque jeu synchronisable est décrit par une fiche YAML dans `src/vitasync/games/`. La première est `p4g.yaml` :
+
+```yaml
+id: p4g                       # nom court, utilisé en ligne de commande
+name: Persona 4 Golden
+adapter: p4g                  # convertisseur à utiliser (phase 5)
+pc:
+  steam_appid: 1113000
+  path: 1113000/remote        # relatif à Steam\userdata\<id>\
+vita:
+  title_id: PCSB00245
+  path: ux0:user/00/savedata/PCSB00245
+```
+
+`manifest.py` transforme ce texte en objets Python :
+- `GameManifest`, `PcSide` et `VitaSide` sont des dataclasses figées, comme `VitaConfig`.
+- `parse_manifest(text)` lit le YAML avec `yaml.safe_load` (jamais `yaml.load`, qui peut exécuter du code) et vérifie chaque champ. Une erreur lève `ManifestError` avec le nom de la fiche.
+- `builtin_manifests()` charge toutes les fiches du dossier `games/` grâce à `importlib.resources`. Cela fonctionne aussi une fois le paquet installé, où les fichiers ne sont pas forcément à l'endroit attendu. Deux fiches avec le même `id` sont refusées.
+- `find_game("p4g")` renvoie une fiche, ou une erreur qui liste les jeux connus.
+
+**Pourquoi.** Ajouter un jeu doit se faire en écrivant une fiche, pas en modifiant du code. Le plan prévoit Balatro ou Cuphead en phase 4.
+
+**Comment le maintenir.**
+- Nouveau jeu : copie `p4g.yaml`, change les valeurs, et ajoute un test dans `tests/test_manifest.py`. La fiche est prise en compte automatiquement.
+- Nouveau champ : ajoute-le à la dataclass concernée, lis-le dans `parse_manifest` et teste le cas invalide.
+- Les fiches ne sont pas encore utilisées pour trouver les dossiers réels : il faudra d'abord connaître ton dossier `Steam\userdata\<id>`. Ce sera fait quand on branchera la synchronisation.
+
+### `store.py`
+
+**Ce qu'il fait.** Il garde un historique de chaque sauvegarde. Chaque version est une copie complète d'un dossier, rangée ainsi :
+
+```
+%LOCALAPPDATA%\vitasync\store\
+└── p4g\
+    ├── 20261017-142300-000000\
+    │   ├── version.json      {"created_at": "...", "origin": "backup-pc"}
+    │   └── files\            copie des fichiers
+    └── 20261017-150812-532114\
+```
+
+- `SaveVersion` décrit une version : jeu, identifiant, date, provenance (`origin`) et dossier des fichiers.
+- `SaveStore` est un `Protocol` : la liste des méthodes que tout stockage doit avoir (`get`, `put`, `snapshot`, `history`). `LocalStore` en est la version sur disque. Un autre stockage (sur la Vita, sur un NAS...) pourra respecter le même contrat, et le reste du code n'y verra aucune différence.
+- L'identifiant d'une version est la date et l'heure UTC **du PC**, à la microseconde (`AAAAMMJJ-HHMMSS-µµµµµµ`). L'horloge de la Vita n'est jamais utilisée, conformément au plan. L'UTC évite les surprises au changement d'heure ; `history` réaffiche l'heure locale. Si deux copies tombent dans la même microseconde, la seconde reçoit le suffixe `-2`, et `_version_order` trie correctement `-10` après `-9`.
+- `snapshot(jeu, dossier, origin)` copie le dossier d'abord dans `.tmp-<version>`, écrit `version.json`, puis renomme. Si la copie plante (disque plein, coupure), le dossier temporaire est supprimé et rien n'apparaît dans l'historique. Les dossiers qui commencent par `.` sont ignorés par `history`.
+- `put(jeu, dossier, origin, expected)` fait la même chose, mais seulement si la version courante est bien `expected`. Sinon, il lève `VersionConflictError`. C'est un verrou « optimiste » : on note la version qu'on a lue, et on refuse d'écrire si quelqu'un a enregistré une autre version entre-temps. Ça servira à détecter les conflits (phase 6).
+- `get(jeu)` renvoie la plus récente, `get(jeu, id)` une version précise ; `history(jeu)` les renvoie toutes, de la plus ancienne à la plus récente.
+- L'horloge est un paramètre (`clock`) : les tests lui passent une fausse horloge pour obtenir des dates prévisibles.
+
+**Pourquoi.** C'est le filet de sécurité de tout le projet : aucune version n'est jamais modifiée ni supprimée par VitaSync.
+
+**Comment le maintenir.**
+- Ne jamais écrire dans un dossier de version existant.
+- Le stockage grossit à chaque copie. Une commande de nettoyage (garder les N dernières versions, par exemple) pourra venir plus tard ; elle devra être explicite.
+- Pour une nouvelle information sur les versions, ajoute une clé dans `version.json` avec une valeur par défaut à la lecture, pour que les anciennes versions restent lisibles.
+
+### `safety.py`
+
+**Ce qu'il fait.** Il applique la règle « jamais d'écrasement sans copie de sauvegarde préalable ». Toute écriture de VitaSync doit passer par ces fonctions :
+- `backup_pc_dir` et `backup_vita_dir` copient un dossier (du PC, ou de la Vita via FTP) dans le stockage, avec l'origine `backup-pc` ou `backup-vita`. Si le dossier n'existe pas encore, il n'y a rien à protéger et elles renvoient `None`.
+- `write_pc_files(store, jeu, source, dest)` copie d'abord `dest`, puis y écrit les fichiers de `source`. Chaque fichier passe par un `.part` renommé à la fin, comme pour les téléchargements FTP.
+- `write_vita_files(store, jeu, ftp, source, remote)` télécharge d'abord le dossier Vita dans le stockage, puis envoie les fichiers. Si le téléchargement échoue, l'exception remonte avant l'envoi : rien n'est écrit sur la console.
+
+Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés**. Les autres fichiers du dossier cible (d'autres slots, `sce_sys`...) restent en place, ce qui respecte la règle « côté Vita, ne remplacer que les fichiers de slot ».
+
+**Pourquoi.** La règle est écrite une fois, ici, au lieu d'être répétée (et oubliée un jour) dans chaque commande.
+
+**Comment le maintenir.** Si une future commande doit écrire quelque part, elle appelle `write_pc_files` ou `write_vita_files`, jamais `shutil.copy` ou `upload_file` directement. Une nouvelle destination (un autre appareil) se traite avec le même schéma : d'abord la copie, ensuite l'écriture.
+
 ### `cli.py`
 
 **Ce qu'il fait.** C'est la ligne de commande, construite avec `argparse` (standard).
@@ -172,6 +251,9 @@ with VitaFtpClient(config) as ftp:
 - `build_parser()` déclare l'option `--version` et la sous-commande `ls` avec ses options `path`, `--host`, `--port` et `--config`. C'est aussi ce qui produit l'aide de `vitasync -h` et `vitasync ls -h`.
 - `resolve_config(args)` choisit la configuration : si `--host` est donné, le fichier est ignoré ; sinon le fichier est lu. `--port` remplace le port dans les deux cas.
 - `run_ls(args)` se connecte, liste, puis affiche une ligne par entrée (taille alignée à droite, ou `<dir>`). Une `ConfigError` ou une `FtpError` est affichée sur la sortie d'erreur avec le code 1, sans trace Python effrayante.
+- `run_history(args)` affiche une ligne par version : identifiant, date en heure locale, provenance.
+- `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
+- `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
 - `main(argv)` analyse les arguments et aiguille vers la bonne sous-commande. Sans sous-commande, elle affiche l'aide. Le paramètre `argv` permet aux tests d'appeler `main(["ls", ...])` sans lancer de vrai processus.
 
 **Pourquoi.** `cli.py` est la seule couche qui parle à l'utilisateur (affichage, codes de sortie). Le reste du code renvoie des données ou lève des exceptions.
@@ -188,7 +270,7 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 26, et ils tournent en environ une seconde, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 54, et ils tournent en environ une seconde, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
@@ -219,9 +301,21 @@ Il vérifie qu'une config complète est bien lue, que le port par défaut vaut 1
 - `list_dir`, `download_dir` et `upload_dir` sont testés contre le faux serveur, avec une fausse sauvegarde P4G (`make_save`).
 - Les cas d'erreur sont testés aussi. Pour « Vita injoignable », on se connecte à un port où rien n'écoute (`free_port`). Pour « dossier introuvable », on liste un dossier inexistant. Pour le transfert interrompu, `monkeypatch` remplace `retrbinary` par une fonction qui envoie quelques octets puis simule une coupure Wi-Fi. Le test vérifie alors que l'ancien fichier est intact et qu'aucun `.part` ne traîne.
 
+### `test_manifest.py`
+
+Il vérifie qu'une fiche minimale est bien lue, que la fiche P4G livrée contient les bonnes valeurs, qu'un jeu inconnu donne un message utile et que cinq fiches invalides sont rejetées.
+
+### `test_store.py`
+
+La fixture `store` utilise `fake_clock`, une horloge qui avance d'une minute à chaque appel : les identifiants de version sont donc connus d'avance. Les tests couvrent la copie et la relecture, l'indépendance d'une version par rapport à sa source, l'ordre de l'historique, deux copies dans la même microseconde (jusqu'à `-10`), le refus de `put` en cas de conflit, les versions introuvables et une copie interrompue (`monkeypatch` simule un disque plein).
+
+### `test_safety.py`
+
+Il vérifie que la copie de sécurité est faite avant l'écriture, que seuls les fichiers fournis sont remplacés (le slot 2 reste intact), qu'un dossier neuf est créé sans copie, et que rien n'est envoyé à la Vita si sa copie de sécurité échoue.
+
 ### `test_cli.py`
 
-`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente.
+`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente. Puis `history` (vide, jeu inconnu) et un `restore` complet : le test vérifie que la version est écrite et que l'ancien contenu a été copié dans le stockage.
 
 ---
 

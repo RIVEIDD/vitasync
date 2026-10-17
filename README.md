@@ -12,6 +12,8 @@ Phase 1 (squelette Python) : paquet `vitasync`, commande `vitasync --version`, o
 
 Phase 2 (transport FTP) : client FTP pour VitaShell (lister, télécharger, envoyer un dossier) et commande `vitasync ls`.
 
+Phase 3 (modèle et sécurité) : fiches de jeu YAML, stockage versionné des sauvegardes, copie de sécurité avant tout écrasement, commandes `vitasync history` et `vitasync restore`.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -79,6 +81,15 @@ timeout = 10     # secondes
 ```
 
 Les chemins Vita s'écrivent `ux0:data/p4g_dump` ; la forme FTP `/ux0:/data/p4g_dump` est aussi acceptée. Les tests FTP tournent contre un faux serveur local (pyftpdlib), sans console.
+
+Chaque version d'une sauvegarde est copiée dans `%LOCALAPPDATA%\vitasync\store\<jeu>\<version>\` (`~/.local/share/vitasync/store` hors Windows), datée par l'horloge du PC. Toute écriture de VitaSync commence par y copier le dossier qu'elle va modifier.
+
+```bash
+uv run vitasync history p4g
+uv run vitasync restore p4g 20261017-142300-000000 --to "C:\chemin\vers\remote"
+```
+
+`restore` ne remplace que les fichiers présents dans la version restaurée, après avoir copié le dossier cible. L'option `--store` change le dossier du stockage.
 
 Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
