@@ -146,3 +146,13 @@ def test_write_remotecache(tmp_path: Path) -> None:
     ]
     assert f'"sha"\t\t"{hashlib.sha1(b"sept").hexdigest()}"' in text
     assert "\r" not in vdf.read_bytes().decode()
+
+
+def test_pc_to_vita_refuse_un_slot_sauvegarde_en_francais(tmp_path: Path) -> None:
+    pc = make_pc_save(tmp_path / "remote", {7: b"sept"})
+    french = b"Temps de jeu\xc2\xa0:47:27:58\nLANG5\nParties termin\xc3\xa9es\xc2\xa0:0\n"
+    (pc / "data0007.binslot").write_bytes(make_binslot(b"sept", french))
+
+    with pytest.raises(ConversionError, match="LANG5"):
+        p4g.pc_to_vita(install(tmp_path / "tool"), pc, tmp_path / "out", [7], None)
+    assert not (tmp_path / "out").exists()

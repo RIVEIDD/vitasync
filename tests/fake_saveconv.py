@@ -9,7 +9,10 @@ from vitasync import p4g
 SDSLOT_SIZE = p4g.SDSLOT_ENTRY_OFFSET + (p4g.MAX_SLOT + 1) * p4g.SDSLOT_ENTRY_SIZE
 
 
-def make_binslot(bin_content: bytes, metadata: bytes = b"meta") -> bytes:
+ENGLISH_METADATA = b"Play Time:1\nLANG1\nTimes Cleared:0\n"
+
+
+def make_binslot(bin_content: bytes, metadata: bytes = ENGLISH_METADATA) -> bytes:
     """Construit un .binslot valide pour le contenu d'un .bin."""
     body = metadata.ljust(0x34C, b"\0")
     slot_md5 = hashlib.md5(body + p4g.BINSLOT_SALT).digest()
@@ -58,7 +61,7 @@ COMMON = textwrap.dedent(
     out.mkdir(exist_ok=True)
 
     def binslot(content):
-        body = b"meta".ljust(0x34C, b"\\0")
+        body = b"Play Time:1\\nLANG1\\nTimes Cleared:0\\n".ljust(0x34C, b"\\0")
         return (b"SAVE0001" + hashlib.md5(body + b"P4GOLDEN").digest()
                 + hashlib.md5(content).digest() + body)
     """

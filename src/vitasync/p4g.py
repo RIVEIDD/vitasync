@@ -95,6 +95,34 @@ def check_binslot(bin_path: Path, binslot_path: Path) -> None:
         raise ConversionError(f"{binslot_path.name} : ne correspond pas à {bin_path.name}")
 
 
+def check_english(binslot_path: Path) -> None:
+    """Vérifie qu'un slot PC a été sauvegardé avec le jeu en anglais.
+
+    Le jeu PC écrit les métadonnées dans sa langue et ajoute une ligne
+    ``LANG<n>`` (``LANG1`` pour l'anglais). La version Vita européenne ne
+    connaît que l'anglais : un slot sauvegardé en français (``LANG5``) rend
+    l'écran de chargement de la Vita inutilisable.
+
+    Args:
+        binslot_path: Fichier ``.binslot`` du slot.
+
+    Raises:
+        ConversionError: Si le slot n'a pas été sauvegardé en anglais.
+    """
+    data = binslot_path.read_bytes()
+    start = data.find(b"\nLANG")
+    if start == -1:
+        return  # system.binslot n'a pas de ligne LANG
+    lang = data[start + 1 :].split(b"\n", 1)[0].decode("ascii", errors="replace")
+    if lang != "LANG1":
+        raise ConversionError(
+            f"{binslot_path.stem} a été sauvegardé dans une autre langue que l'anglais "
+            f"({lang}) : la Vita ne saurait pas l'afficher. Passe P4G "
+            "en anglais sur PC (Steam > Propriétés > Langue), recharge ce slot et "
+            "resauvegarde-le, puis relance le push."
+        )
+
+
 def merge_sdslot(base: bytes, new: bytes, slots: Iterable[int]) -> bytes:
     """Remplace les entrées de quelques slots dans un ``sdslot.dat`` Vita.
 
@@ -234,6 +262,7 @@ def pc_to_vita(
             name = bin_name(slot)
             if (work / name).is_file():
                 check_binslot(work / name, work / f"{name}slot")
+                check_english(work / f"{name}slot")
 
         converted = run_saveconv(saveconv, "convert_pc2vita.py", work)
         out_dir.mkdir(parents=True, exist_ok=True)
