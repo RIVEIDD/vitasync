@@ -1,0 +1,34 @@
+image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+variables:
+  UV_CACHE_DIR: .uv-cache
+  UV_LINK_MODE: copy
+
+cache:
+  key:
+    files:
+      - uv.lock
+  paths:
+    - .uv-cache
+
+stages:
+  - check
+
+before_script:
+  - uv sync --locked
+
+lint:
+  stage: check
+  script:
+    - uv run ruff check
+    - uv run ruff format --check
+
+typecheck:
+  stage: check
+  script:
+    - uv run mypy
+
+test:
+  stage: check
+  script:
+    - uv run pytest
