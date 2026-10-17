@@ -139,7 +139,8 @@ static void cmd_VSRS(ftpvita_client_info_t *client) {
 }
 
 static void cmd_VSVR(ftpvita_client_info_t *client) {
-    reply(client, "200 VitaSync " VERSION);
+    // Pas de reply() : cette question du PC ne doit pas remplacer l'état affiché.
+    ftpvita_ext_client_send_ctrl_msg(client, "200 VitaSync " VERSION FTPVITA_EOL);
 }
 
 int remote_start(char *ip, unsigned short *port) {
