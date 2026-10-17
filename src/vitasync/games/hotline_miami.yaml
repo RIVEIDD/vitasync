@@ -1,0 +1,14 @@
+# Hotline Miami : Steam 219150 <-> PS Vita PCSB00318 (EUR).
+# Même conteneur SaveData.sav des deux côtés, en-tête en plus sur Vita.
+id: hotline_miami
+name: Hotline Miami
+adapter: hotline_miami
+pc:
+  steam_appid: 219150
+  path: "{documents}/My Games/HotlineMiami"
+vita:
+  title_id: PCSB00318
+  path: ux0:user/00/savedata/PCSB00318
+  # Slots de Save Manager, comme pour P4G.
+  dump: ux0:data/savegames/PCSB00318/SLOT0
+  inbox: ux0:data/savegames/PCSB00318/SLOT1

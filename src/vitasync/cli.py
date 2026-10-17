@@ -6,15 +6,17 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from vitasync import __version__, p4g_sync
+from vitasync import __version__, hotline_miami_sync, p4g_sync
 from vitasync.config import (
     ConfigError,
+    SteamConfig,
     VitaConfig,
     default_config_path,
     load_config,
     load_steam_config,
 )
 from vitasync.ftp import FtpError, VitaFtpClient
+from vitasync.hotline_miami import SaveFormatError
 from vitasync.manifest import ManifestError, find_game
 from vitasync.p4g import ConversionError, parse_slots
 from vitasync.p4g_sync import SyncError
@@ -82,8 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
         transfer.add_argument("game", help="identifiant du jeu, par exemple p4g")
         transfer.add_argument(
             "--slots",
-            required=True,
-            help="slots à transférer : 7, 1,7, system ou all",
+            default=None,
+            help="slots à transférer (P4G) : 7, 1,7, system ou all",
         )
         transfer.add_argument("--store", type=Path, default=None, help=store_help)
         add_connection_options(transfer)
@@ -211,33 +213,53 @@ def run_transfer(args: argparse.Namespace) -> int:
     """
     command = args.command
     try:
-        # Les slots sont vérifiés d'abord : une faute de frappe ne coûte pas de connexion.
-        slots = parse_slots(args.slots) if command in ("pull", "push") else []
         game = find_game(args.game)
-        if game.adapter != "p4g":
+        if game.adapter not in ("p4g", "hotline_miami"):
             raise SyncError(f"{game.name} : adaptateur {game.adapter} pas encore pris en charge")
-        steam = load_steam_config(args.config or default_config_path())
+        is_p4g = game.adapter == "p4g"
+        # Les slots sont vérifiés d'abord : une faute de frappe ne coûte pas de connexion.
+        slots: list[int] = []
+        if is_p4g and command in ("pull", "push"):
+            if args.slots is None:
+                raise ValueError("--slots est obligatoire pour ce jeu (7, 1,7, system ou all)")
+            slots = parse_slots(args.slots)
+        try:
+            steam: SteamConfig | None = load_steam_config(args.config or default_config_path())
+        except ConfigError:
+            if is_p4g:
+                raise
+            steam = None  # Hotline Miami n'a pas besoin de Steam
         with VitaFtpClient(resolve_config(args)) as ftp:
-            if command == "status":
-                states = p4g_sync.status(ftp, steam, game)
-                print_status(states)
-                return 0
-            if command == "sync":
-                direction, slots = p4g_sync.plan_sync(p4g_sync.status(ftp, steam, game))
+            if command in ("status", "sync"):
+                if is_p4g:
+                    assert steam is not None
+                    states = p4g_sync.status(ftp, steam, game)
+                else:
+                    states = hotline_miami_sync.status(ftp, steam, game)
+                if command == "status":
+                    print_status(states, as_time=is_p4g)
+                    return 0
+                direction, slots = p4g_sync.plan_sync(states)
                 if direction is None:
-                    print("Déjà synchronisé : tous les slots sont identiques.")
+                    print("Déjà synchronisé : le PC et la Vita sont au même point.")
                     return 0
                 command = direction
-                print(
-                    f"Plus avancé sur {'PC' if command == 'push' else 'Vita'} : {command} "
-                    f"des slots {','.join(map(str, slots))}."
-                )
+                where = "PC" if command == "push" else "Vita"
+                detail = f" des slots {','.join(map(str, slots))}" if is_p4g else ""
+                print(f"Plus avancé sur {where} : {command}{detail}.")
             store = open_store(args)
-            if command == "pull":
-                result = p4g_sync.pull(store, ftp, steam, game, slots)
+            if is_p4g:
+                assert steam is not None
+                if command == "pull":
+                    result = p4g_sync.pull(store, ftp, steam, game, slots)
+                else:
+                    result = p4g_sync.push(store, ftp, steam, game, slots)
+            elif command == "pull":
+                result = hotline_miami_sync.pull(store, ftp, steam, game)
             else:
-                result = p4g_sync.push(store, ftp, steam, game, slots)
+                result = hotline_miami_sync.push(store, ftp, steam, game)
     except (
+        SaveFormatError,
         ValueError,
         ManifestError,
         StoreError,
@@ -257,7 +279,10 @@ def run_transfer(args: argparse.Namespace) -> int:
     if command == "pull":
         if result.automatic:
             print("Backup fait par l'appli VitaSync sur la Vita.")
-        print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
+        if game.adapter == "p4g":
+            print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
+        else:
+            print(f"Copié sur le PC : {files}.")
     elif result.automatic:
         print(f"Restauré sur la Vita par l'appli VitaSync (slots remplacés : {files}).")
     else:
@@ -267,13 +292,21 @@ def run_transfer(args: argparse.Namespace) -> int:
     return 0
 
 
-def print_status(states: list[p4g_sync.SlotState]) -> None:
+def print_status(states: list[p4g_sync.SlotState], as_time: bool = True) -> None:
     """Affiche le tableau de ``vitasync status``.
 
     Args:
         states: Avancement de chaque slot.
+        as_time: ``True`` si l'avancement est un temps de jeu en secondes
+            (P4G), ``False`` si c'est un nombre de niveaux (Hotline Miami).
     """
     labels = {"same": "identiques", "pc": "PC", "vita": "Vita"}
+    if not as_time:
+        for state in states:
+            pc = "-" if state.pc is None else f"{state.pc} niveaux"
+            vita = "-" if state.vita is None else f"{state.vita} niveaux"
+            print(f"PC : {pc}  |  Vita : {vita}  |  plus avancé : {labels[state.newer]}")
+        return
     print(f"{'Slot':>4}  {'PC':>9}  {'Vita':>9}  Plus avancé")
     for state in states:
         print(
