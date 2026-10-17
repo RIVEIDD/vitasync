@@ -280,6 +280,7 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 - **`run_saveconv(dossier_outil, script, dossier)`** lance un script de p4g-saveconv avec le même Python que VitaSync (`sys.executable`) et récupère le dossier `<dossier>_conv` qu'il produit. Si le script échoue, son message d'erreur est remonté dans une `ConversionError`.
 - **`vita_to_pc(...)`** copie la sauvegarde Vita dans un dossier temporaire (l'outil écrit à côté de son entrée, et on ne veut rien salir), lance `convert_vita2pc.py`, vérifie chaque `.binslot` produit, puis ne garde que les slots demandés.
 - **`pc_to_vita(...)`** fait l'inverse avec `convert_pc2vita.py`. Il convertit tous les slots, parce que l'outil a besoin de tous les `.binslot` pour construire `sdslot.dat`, mais ne garde que les `.bin` demandés et fusionne `sdslot.dat` avec celui de la Vita.
+- **`play_time(métadonnées)`**, **`pc_play_times(remote)`** et **`vita_play_times(sdslot)`** lisent le temps de jeu de chaque slot, dans les `.binslot` côté PC et dans `sdslot.dat` côté Vita. L'expression `PLAY_TIME` cherche une ligne qui se termine par `h:mm:ss`, ce qui marche en anglais (« Play Time ») comme en français (« Temps de jeu »). `system.bin` n'a pas de temps de jeu et n'est jamais comparé.
 - **`write_remotecache(remote, vdf)`** réécrit `remotecache.vdf`, la liste des fichiers que Steam connaît pour le jeu, avec la taille, la date et le SHA-1 de chaque fichier. Le jeu n'affiche que les sauvegardes listées dedans. Le fichier est réécrit pour **tout** le dossier `remote`, pas seulement les slots copiés, pour que les autres restent visibles.
 
 **Pourquoi p4g-saveconv est appelé de l'extérieur.** Son dépôt n'a pas de licence : on n'a pas le droit d'en recopier le code dans VitaSync. On l'appelle donc tel quel, depuis le dossier indiqué dans la config, et on écrit nous-mêmes le reste (choix des slots, vérifications, `remotecache.vdf`) d'après le format documenté.
@@ -311,6 +312,8 @@ Il te reste ensuite à faire *Restore* du slot 1 dans Save Manager. VitaSync ne 
 
 **Avec l'appli VitaSync.** `_app_slot` regarde si le dossier de la fiche se termine par `SLOT<n>` et si l'appli est au bout du FTP. Si oui, `pull` et `push` demandent d'abord à l'appli un *Backup* vers ce slot (la copie est donc toujours fraîche), et `push` demande à la fin le *Restore* du slot 1. `TransferResult.automatic` le signale à `cli.py`, qui n'affiche alors plus de consigne pour Save Manager. Sans l'appli, rien ne change.
 
+**`status` et `plan_sync`.** `status(ftp, steam, jeu)` rafraîchit la copie du slot 0 (Backup par l'appli si elle est là), ne télécharge que `sdslot.dat`, lit les temps de jeu des deux côtés et renvoie un `SlotState` par slot. `SlotState.newer` vaut `pc`, `vita` ou `same`. `plan_sync(états)` en déduit `("push", slots)`, `("pull", slots)` ou `(None, [])` si tout est identique. Si certains slots sont plus avancés d'un côté et d'autres de l'autre, il lève une `SyncError` : c'est un conflit, et c'est à toi de trancher. Le temps de jeu sert de référence parce qu'il ne fait qu'augmenter au fil d'une partie, alors que l'horloge de la Vita n'est pas fiable.
+
 Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouvert ou fermé.
 
 **Pourquoi.** L'ordre des étapes est la partie la plus importante : la conversion et toutes les vérifications ont lieu **avant** la première écriture, et la copie de sécurité juste avant elle. Si quelque chose échoue en route, la destination n'a pas été touchée.
@@ -330,6 +333,7 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 - `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
 - `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
 - `run_transfer(args)` sert à `pull` et `push` : il lit `--slots`, la fiche, les sections `[vita]` et `[steam]` de la config, ouvre la connexion FTP et appelle `p4g_sync`. Après un `push`, il affiche la manipulation à faire dans VitaShell.
+- `status` et `sync` passent aussi par `run_transfer` : `status` affiche le tableau (`print_status`, `format_play_time`) ; `sync` appelle `plan_sync`, annonce le sens choisi, puis enchaîne sur `pull` ou `push` avec la même connexion. Les slots de `pull`/`push` sont vérifiés avant toute connexion.
 - `main(argv)` analyse les arguments et aiguille vers la bonne sous-commande. Sans sous-commande, elle affiche l'aide. Le paramètre `argv` permet aux tests d'appeler `main(["ls", ...])` sans lancer de vrai processus.
 
 **Pourquoi.** `cli.py` est la seule couche qui parle à l'utilisateur (affichage, codes de sortie). Le reste du code renvoie des données ou lève des exceptions.
@@ -374,7 +378,7 @@ La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 100, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 106, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.

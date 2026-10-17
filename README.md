@@ -20,6 +20,8 @@ Phase 5 (Persona 4 Golden) : commandes `vitasync pull` et `vitasync push`, conve
 
 Appli Vita VitaSync : fork de Save Manager avec un FTP intégré, actif seulement quand l'appli est ouverte. `pull` et `push` lui font faire le *Backup* et le *Restore* : plus aucune manipulation sur la console. Validé dans les deux sens sur P4G.
 
+Phase 6 (en cours) : `vitasync status` compare le temps de jeu de chaque slot entre Steam et la Vita, et `vitasync sync` copie les slots les plus avancés dans le bon sens.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -117,6 +119,15 @@ Ouvrir VitaSync sur la Vita (le haut de l'écran affiche « FTP pret : IP:port �
 uv run vitasync pull p4g --slots 7   # Steam fermé ; l'appli fait le Backup, VitaSync copie vers Steam
 uv run vitasync push p4g --slots 7   # l'appli fait le Backup, VitaSync prépare le slot 1, l'appli fait le Restore
 ```
+
+Le plus simple est de laisser VitaSync choisir le sens :
+
+```bash
+uv run vitasync status p4g   # temps de jeu de chaque slot, côté PC et côté Vita
+uv run vitasync sync p4g     # pull ou push des slots les plus avancés (Steam fermé pour un pull)
+```
+
+`sync` compare le temps de jeu inscrit dans chaque slot (il ne fait qu'augmenter au fil d'une partie ; les dates de fichiers ne servent pas, l'horloge de la Vita n'étant pas fiable). Si certains slots sont plus avancés sur PC et d'autres sur Vita, il s'arrête et indique les `push` et `pull` à lancer à la main.
 
 `pull` télécharge le slot 0, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
 
