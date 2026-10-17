@@ -10,6 +10,8 @@ Phase 0 (préparation) : procédure manuelle PC ↔ Vita validée dans les deux 
 
 Phase 1 (squelette Python) : paquet `vitasync`, commande `vitasync --version`, outillage qualité et CI GitLab.
 
+Phase 2 (transport FTP) : client FTP pour VitaShell (lister, télécharger, envoyer un dossier) et commande `vitasync ls`.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -58,6 +60,25 @@ uv run ruff format --check
 uv run mypy
 uv run pytest
 ```
+
+## Utilisation
+
+Dans VitaShell, appuyer sur Select pour lancer le serveur FTP et noter l'adresse affichée. Puis :
+
+```bash
+uv run vitasync ls ux0:data --host 192.168.1.42
+```
+
+Pour ne pas répéter l'adresse, créer `%APPDATA%\vitasync\config.toml` (`~/.config/vitasync/config.toml` hors Windows) :
+
+```toml
+[vita]
+host = "192.168.1.42"
+port = 1337      # port de VitaShell, valeur par défaut
+timeout = 10     # secondes
+```
+
+Les chemins Vita s'écrivent `ux0:data/p4g_dump` ; la forme FTP `/ux0:/data/p4g_dump` est aussi acceptée. Les tests FTP tournent contre un faux serveur local (pyftpdlib), sans console.
 
 Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
