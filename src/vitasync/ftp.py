@@ -256,6 +256,53 @@ class VitaFtpClient:
             raise TransferError(f"Impossible d'accéder à {ftp_path} ({exc})") from exc
         return True
 
+    def is_vitasync_app(self) -> bool:
+        """Indique si le serveur FTP est celui de l'appli VitaSync (commande ``VSVR``).
+
+        Returns:
+            ``True`` pour l'appli VitaSync, ``False`` pour un autre serveur
+            (VitaShell, vitacompanion), qui ne connaît pas les commandes de
+            Backup et de Restore.
+        """
+        try:
+            return self._conn.sendcmd("VSVR").startswith("200 VitaSync")
+        except ftplib.all_errors:
+            return False
+
+    def save_backup(self, title_id: str, slot: int) -> None:
+        """Demande à l'appli VitaSync de copier la sauvegarde décryptée dans un slot.
+
+        C'est le *Backup* de Save Manager, vers ``ux0:data/savegames/<id>/SLOT<n>``.
+
+        Args:
+            title_id: Identifiant du jeu sur la Vita, par exemple ``PCSB00245``.
+            slot: Numéro du slot (0 à 9).
+
+        Raises:
+            TransferError: Si l'appli refuse ou échoue.
+        """
+        self._save_command("VSBK", title_id, slot)
+
+    def save_restore(self, title_id: str, slot: int) -> None:
+        """Demande à l'appli VitaSync de remettre un slot dans la sauvegarde du jeu.
+
+        C'est le *Restore* de Save Manager, depuis ``ux0:data/savegames/<id>/SLOT<n>``.
+
+        Args:
+            title_id: Identifiant du jeu sur la Vita, par exemple ``PCSB00245``.
+            slot: Numéro du slot (0 à 9).
+
+        Raises:
+            TransferError: Si l'appli refuse ou échoue.
+        """
+        self._save_command("VSRS", title_id, slot)
+
+    def _save_command(self, command: str, title_id: str, slot: int) -> None:
+        try:
+            self._conn.voidcmd(f"{command} {title_id} {slot}")
+        except ftplib.all_errors as exc:
+            raise TransferError(f"L'appli VitaSync a refusé {command} ({exc})") from exc
+
     def make_dir(self, remote: str) -> None:
         """Crée un dossier sur la Vita s'il n'existe pas déjà.
 

@@ -160,3 +160,28 @@ def test_remove_tree_accepte_la_reponse_226_de_vitashell(
         ftp.remove_tree("/p4g_dump")
 
     assert list(fake_vita.root.iterdir()) == []
+
+
+def test_commandes_de_l_appli_vitasync(fake_app: FakeVita) -> None:
+    save = fake_app.root / "savedata" / "PCSB00245"
+    save.mkdir(parents=True)
+    (save / "data0007.bin").write_bytes(b"partie")
+
+    with VitaFtpClient(fake_app.config) as ftp:
+        assert ftp.is_vitasync_app()
+        ftp.save_backup("PCSB00245", 0)
+        slot = fake_app.root / "savegames" / "PCSB00245" / "SLOT0"
+        assert (slot / "data0007.bin").read_bytes() == b"partie"
+
+        (slot / "data0007.bin").write_bytes(b"depuis le PC")
+        ftp.save_restore("PCSB00245", 0)
+        assert (save / "data0007.bin").read_bytes() == b"depuis le PC"
+
+        with pytest.raises(TransferError, match="VSRS"):
+            ftp.save_restore("PCSB00245", 5)
+
+
+def test_un_autre_serveur_n_est_pas_l_appli(fake_vita: FakeVita) -> None:
+    with VitaFtpClient(fake_vita.config) as ftp:
+        assert not ftp.is_vitasync_app()
+        assert ftp.list_dir("/") == []
