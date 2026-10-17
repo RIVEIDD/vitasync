@@ -1,6 +1,6 @@
 # Guide du code VitaSync
 
-Ce guide passe en revue chaque fichier écrit pendant les phases 1 à 3 : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt à la fin de la phase 3.
+Ce guide passe en revue chaque fichier écrit pendant les phases 1, 2, 3 et 5 : ce qu'il fait, pourquoi il existe et comment le faire évoluer. Il reflète l'état du dépôt à la fin de la phase 5 (la phase 4 est reportée).
 
 ## Vue d'ensemble
 
@@ -21,7 +21,10 @@ VitaPcSynchro/
 │   ├── manifest.py       lecture des fiches de jeu
 │   ├── games/            les fiches de jeu YAML (p4g.yaml)
 │   ├── store.py          stockage versionné des sauvegardes
-│   └── safety.py         écritures précédées d'une copie de sécurité
+│   ├── safety.py         écritures précédées d'une copie de sécurité
+│   ├── steam.py          détection de Steam ouvert
+│   ├── p4g.py            format P4G et conversion via p4g-saveconv
+│   └── p4g_sync.py       pull et push de P4G
 └── tests/                les tests automatiques (pytest)
     ├── conftest.py       « fixtures » partagées entre tests
     ├── fake_vita.py      faux serveur FTP qui imite la Vita
@@ -30,16 +33,21 @@ VitaPcSynchro/
     ├── test_ftp.py       tests du client FTP
     ├── test_manifest.py  tests des fiches de jeu
     ├── test_store.py     tests du stockage
-    └── test_safety.py    tests des copies de sécurité
+    ├── test_safety.py    tests des copies de sécurité
+    ├── fake_saveconv.py  faux p4g-saveconv et fausses sauvegardes P4G
+    ├── test_p4g.py       tests du format et de la conversion
+    └── test_p4g_sync.py  tests de pull et push
 ```
 
 Le chemin d'une commande, de haut en bas : `vitasync ls ux0:data` → `cli.py` lit les arguments → `config.py` fournit l'IP et le port → `ftp.py` se connecte à la Vita et liste le dossier → `cli.py` affiche le résultat.
 
 Et pour `vitasync restore p4g <version> --to <dossier>` : `cli.py` → `manifest.py` vérifie que le jeu existe → `store.py` retrouve la version → `safety.py` copie d'abord le dossier cible dans le stockage, puis y écrit les fichiers de la version.
 
+Et pour `vitasync pull p4g --slots 7` : `cli.py` → `config.py` (Vita et Steam) → `p4g_sync.py` vérifie que Steam est fermé (`steam.py`), télécharge la copie décryptée (`ftp.py`), l'enregistre (`store.py`), la convertit (`p4g.py`), copie le dossier Steam (`safety.py`), puis écrit les slots et `remotecache.vdf`.
+
 Chaque module a une seule responsabilité. `ftp.py` ne sait rien de la ligne de commande et `cli.py` ne sait rien du protocole FTP. C'est ce qui permettra, plus tard, de réutiliser le client FTP dans `vitasync sync` sans rien réécrire.
 
-Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, `safety.py`, puis `cli.py` et les tests.
+Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, `safety.py`, `p4g.py`, `p4g_sync.py`, puis `cli.py` et les tests.
 
 ---
 
@@ -49,7 +57,7 @@ Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, 
 
 **Ce qu'il fait.** C'est la carte d'identité du projet, au format standard Python. Il contient :
 
-- `[project]` : nom, version (`0.1.0`), version minimale de Python (3.12) et dépendances d'exécution. Une seule : PyYAML, pour lire les fiches de jeu. Le reste utilise la bibliothèque standard (`ftplib`, `tomllib`, `argparse`, `shutil`). `types-pyyaml`, dans les outils de dev, donne à mypy les types de PyYAML.
+- `[project]` : nom, version (`0.1.0`), version minimale de Python (3.12) et dépendances d'exécution. Une seule : PyYAML, pour lire les fiches de jeu. Le reste utilise la bibliothèque standard (`ftplib`, `tomllib`, `argparse`, `shutil`, `hashlib`, `subprocess`). `types-pyyaml`, dans les outils de dev, donne à mypy les types de PyYAML.
 - `[project.scripts]` : la ligne `vitasync = "vitasync.cli:main"` crée la commande `vitasync`. Quand tu la tapes, Python appelle la fonction `main` du fichier `cli.py`.
 - `[build-system]` : l'outil qui fabrique le paquet (hatchling). Tu n'as pas à y toucher.
 - `[dependency-groups] dev` : les outils de développement (ruff, mypy, pytest, pyftpdlib). Ils sont installés pour toi, mais pas pour quelqu'un qui installerait seulement VitaSync.
@@ -131,11 +139,13 @@ Fichier vide qui signale à mypy et aux éditeurs que le paquet fournit ses type
 
 Un détail : `isinstance(port, bool)` est exclu exprès, parce qu'en Python `True` est aussi un `int`, et `port = true` serait sinon accepté comme port 1.
 
-**Pourquoi.** Valider tôt, avec un message clair, plutôt que d'obtenir plus tard une erreur réseau incompréhensible. Le plan prévoit des fiches par jeu en phase 3 : elles vivront dans un module à part, pas ici.
+La section `[steam]` est lue à part, par `load_steam_config(path)`, qui renvoie un `SteamConfig` : `userdata` (le dossier `Steam\userdata\<id>` de ton compte) et `p4g_saveconv` (le dossier de l'outil, facultatif). Les deux sections partagent `_read_toml`, qui lit le fichier et traduit les erreurs. `ls` n'a donc besoin que de `[vita]`, et `pull`/`push` des deux.
 
-**Comment le maintenir.** Pour un nouveau réglage, par exemple un dossier Steam :
-1. ajoute un attribut à `VitaConfig` (ou crée une nouvelle dataclass pour une nouvelle section) ;
-2. lis-le et valide-le dans `load_config` ;
+**Pourquoi.** Valider tôt, avec un message clair, plutôt que d'obtenir plus tard une erreur réseau incompréhensible. Les fiches de jeu vivent dans un module à part (`manifest.py`) : la config décrit *ta* machine, les fiches décrivent *les jeux*.
+
+**Comment le maintenir.** Pour un nouveau réglage :
+1. ajoute un attribut à la dataclass de sa section (ou crée une dataclass et une fonction `load_..._config` pour une nouvelle section) ;
+2. lis-le et valide-le dans la fonction de chargement ;
 3. ajoute un cas valide et un cas invalide dans `tests/test_config.py`.
 
 ### `ftp.py`
@@ -166,6 +176,7 @@ with VitaFtpClient(config) as ftp:
 - `download_file(remote, local)` écrit d'abord dans `fichier.part`, puis renomme une fois le transfert complet. Si le transfert est coupé, le `.part` est supprimé et l'ancien fichier local reste intact. C'est l'application de la règle « jamais d'écrasement sans filet ».
 - `download_dir` et `upload_dir` parcourent un dossier récursivement : pour chaque entrée, un fichier est transféré et un sous-dossier provoque un nouvel appel de la même fonction.
 - `dir_exists(remote)` teste si un dossier existe en essayant d'y entrer (`CWD`). `make_dir(remote)` s'en sert pour ne créer le dossier (`MKD`) que si besoin : on peut donc renvoyer deux fois le même dossier.
+- `remove_tree(remote)` supprime un dossier et tout son contenu. Il ne sert qu'à vider `ux0:data/p4g_in`, le dossier de transit de `push`, après en avoir fait une copie : sinon, des fichiers d'un ancien `push` y traîneraient et seraient collés par erreur.
 
 **Pourquoi.** Toute la complexité réseau reste dans ce fichier. Les phases suivantes appelleront `download_dir` et `upload_dir` sans se soucier du FTP.
 
@@ -244,6 +255,59 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 
 **Comment le maintenir.** Si une future commande doit écrire quelque part, elle appelle `write_pc_files` ou `write_vita_files`, jamais `shutil.copy` ou `upload_file` directement. Une nouvelle destination (un autre appareil) se traite avec le même schéma : d'abord la copie, ensuite l'écriture.
 
+### `steam.py`
+
+**Ce qu'il fait.** `is_steam_running()` regarde si `steam.exe` tourne (avec `tasklist` sous Windows, `pgrep` ailleurs). Si la commande de détection échoue, elle répond « oui » par prudence.
+
+**Pourquoi.** La règle « injection côté Steam uniquement avec Steam fermé » : Steam garde ses fichiers ouverts et pourrait écraser les nôtres, ou les envoyer de travers sur Steam Cloud.
+
+**Comment le maintenir.** Si un jour la détection se trompe (Steam installé sous un autre nom), c'est ici qu'on corrige.
+
+### `p4g.py`
+
+**Ce qu'il fait.** Tout ce qui est propre au format de Persona 4 Golden. Le README de p4g-saveconv documente le format ; ce module s'en sert.
+
+- **Les slots.** Un slot est un numéro : 0 pour `system.bin` (données communes), 1 à 16 pour `data0001.bin` à `data0016.bin`. `bin_name(7)` donne `data0007.bin`. `parse_slots("1,7,system")` lit l'option `--slots` et renvoie `[0, 1, 7]` ; `all` renvoie tout.
+- **`check_binslot(bin, binslot)`** vérifie un `.binslot` PC. Ce fichier commence par `SAVE0001`, puis le MD5 de ses propres métadonnées suivies du mot `P4GOLDEN`, puis le MD5 du `.bin`. Si l'une des deux empreintes est fausse, le jeu refuserait la sauvegarde : on s'arrête avant d'écrire quoi que ce soit.
+- **`merge_sdslot(base, new, slots)`.** Côté Vita, les métadonnées de tous les slots sont dans un seul fichier, `sce_sys/sdslot.dat` : un octet « actif » par slot à l'adresse `0x200 + slot`, et un bloc de `0x400` octets par slot à partir de `0x400`. La fonction part du `sdslot.dat` actuel de la Vita et ne remplace que les blocs des slots envoyés. Sans elle, envoyer le slot 7 remplacerait aussi l'affichage des slots 1 à 6 par celui du PC.
+- **`run_saveconv(dossier_outil, script, dossier)`** lance un script de p4g-saveconv avec le même Python que VitaSync (`sys.executable`) et récupère le dossier `<dossier>_conv` qu'il produit. Si le script échoue, son message d'erreur est remonté dans une `ConversionError`.
+- **`vita_to_pc(...)`** copie la sauvegarde Vita dans un dossier temporaire (l'outil écrit à côté de son entrée, et on ne veut rien salir), lance `convert_vita2pc.py`, vérifie chaque `.binslot` produit, puis ne garde que les slots demandés.
+- **`pc_to_vita(...)`** fait l'inverse avec `convert_pc2vita.py`. Il convertit tous les slots, parce que l'outil a besoin de tous les `.binslot` pour construire `sdslot.dat`, mais ne garde que les `.bin` demandés et fusionne `sdslot.dat` avec celui de la Vita.
+- **`write_remotecache(remote, vdf)`** réécrit `remotecache.vdf`, la liste des fichiers que Steam connaît pour le jeu, avec la taille, la date et le SHA-1 de chaque fichier. Le jeu n'affiche que les sauvegardes listées dedans. Le fichier est réécrit pour **tout** le dossier `remote`, pas seulement les slots copiés, pour que les autres restent visibles.
+
+**Pourquoi p4g-saveconv est appelé de l'extérieur.** Son dépôt n'a pas de licence : on n'a pas le droit d'en recopier le code dans VitaSync. On l'appelle donc tel quel, depuis le dossier indiqué dans la config, et on écrit nous-mêmes le reste (choix des slots, vérifications, `remotecache.vdf`) d'après le format documenté.
+
+**Comment le maintenir.**
+- Si p4g-saveconv change sa façon de nommer ses sorties, c'est `run_saveconv` qu'il faut adapter.
+- Les adresses (`0x200`, `0x400`...) sont des constantes en haut du fichier : ne les écris jamais en dur ailleurs.
+- Pour un autre jeu avec conversion, crée un module à son nom sur le même modèle.
+
+### `p4g_sync.py`
+
+**Ce qu'il fait.** Il enchaîne les étapes de `pull` et `push`, en respectant les règles du projet. Chaque fonction renvoie un `TransferResult` : les fichiers transférés, la version d'origine enregistrée et la copie de sécurité de la destination.
+
+`pull(store, ftp, steam, jeu, slots)`, de la Vita vers Steam :
+1. refuse si Steam est ouvert ;
+2. télécharge `ux0:data/p4g_dump` (la copie *Open decrypted*) et l'enregistre dans le stockage (origine `vita`) ;
+3. convertit au format PC et vérifie les MD5 ;
+4. revérifie que Steam est toujours fermé ;
+5. copie tout le dossier Steam `1113000` (avec `remote` et `remotecache.vdf`) dans le stockage (origine `backup-pc`) ;
+6. écrit uniquement les slots demandés dans `remote`, puis régénère `remotecache.vdf`.
+
+`push(store, ftp, steam, jeu, slots)`, de Steam vers la Vita :
+1. enregistre le dossier Steam `remote` (origine `pc`) ;
+2. télécharge `ux0:data/p4g_dump` comme copie de sécurité de la sauvegarde Vita (origine `backup-vita`), et refuse s'il n'existe pas ;
+3. convertit au format Vita, en fusionnant `sdslot.dat` avec celui de la copie Vita ;
+4. copie puis vide `ux0:data/p4g_in`, et y dépose les fichiers convertis.
+
+Il te reste ensuite à coller le contenu de `p4g_in` dans la sauvegarde avec VitaShell. VitaSync ne peut pas le faire : par FTP, la sauvegarde est chiffrée.
+
+Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouvert ou fermé.
+
+**Pourquoi.** L'ordre des étapes est la partie la plus importante : la conversion et toutes les vérifications ont lieu **avant** la première écriture, et la copie de sécurité juste avant elle. Si quelque chose échoue en route, la destination n'a pas été touchée.
+
+**Comment le maintenir.** Garde cet ordre : lire, convertir, vérifier, copier la destination, écrire. Une limite à connaître : `push` fait confiance à `p4g_dump`. Si cette copie est ancienne, la sauvegarde de sécurité et les métadonnées des autres slots le seront aussi. D'où la consigne de rafraîchir `p4g_dump` avant chaque `push`.
+
 ### `cli.py`
 
 **Ce qu'il fait.** C'est la ligne de commande, construite avec `argparse` (standard).
@@ -256,6 +320,7 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 - `run_history(args)` affiche une ligne par version : identifiant, date en heure locale, provenance.
 - `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
 - `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
+- `run_transfer(args)` sert à `pull` et `push` : il lit `--slots`, la fiche, les sections `[vita]` et `[steam]` de la config, ouvre la connexion FTP et appelle `p4g_sync`. Après un `push`, il affiche la manipulation à faire dans VitaShell.
 - `main(argv)` analyse les arguments et aiguille vers la bonne sous-commande. Sans sous-commande, elle affiche l'aide. Le paramètre `argv` permet aux tests d'appeler `main(["ls", ...])` sans lancer de vrai processus.
 
 **Pourquoi.** `cli.py` est la seule couche qui parle à l'utilisateur (affichage, codes de sortie). Le reste du code renvoie des données ou lève des exceptions.
@@ -272,7 +337,7 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 57, et ils tournent en environ une seconde, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 92, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
@@ -315,9 +380,25 @@ La fixture `store` utilise `fake_clock`, une horloge qui avance d'une minute à 
 
 Il vérifie que la copie de sécurité est faite avant l'écriture, que seuls les fichiers fournis sont remplacés (le slot 2 reste intact), qu'un dossier neuf est créé sans copie, et que rien n'est envoyé à la Vita si sa copie de sécurité échoue.
 
+### `fake_saveconv.py`
+
+Un faux p4g-saveconv, puisque le vrai n'est pas dans le dépôt (ni donc dans la CI). `install(dossier)` y écrit deux petits scripts `convert_vita2pc.py` et `convert_pc2vita.py` qui se comportent comme l'outil : ils lisent un dossier et produisent `<dossier>_conv`, avec des `.binslot` et un `sdslot.dat` valides. Ils ne convertissent rien pour de vrai : ils préfixent le contenu par `pc:` ou `vita:`, ce qui permet aux tests de vérifier quel fichier est arrivé où. `install(..., broken=True)` donne un outil qui plante.
+
+Le fichier fournit aussi `make_pc_save`, `make_vita_save`, `make_binslot` et `make_sdslot` pour fabriquer de fausses sauvegardes P4G.
+
+La vraie conversion se vérifie sur tes vraies sauvegardes, comme lors du test de la phase 3.
+
+### `test_p4g.py`
+
+Noms de fichiers et `--slots`, `check_binslot` (fichier correct, `.bin` modifié, métadonnées abîmées, mauvais en-tête), `merge_sdslot`, les deux conversions avec le faux outil (slots filtrés, outil absent ou en panne, `.binslot` incohérent) et le contenu exact de `remotecache.vdf`.
+
+### `test_p4g_sync.py`
+
+`pull` contre le faux serveur, un faux dossier Steam et le faux outil : seul le slot demandé change, le dossier Steam et `remotecache.vdf` sont copiés avant, rien n'est écrit si Steam est ouvert (même s'il s'ouvre en cours de route) ou si `p4g_dump` manque. `push` : `p4g_in` est vidé des restes d'un ancien `push`, ne contient que le slot demandé et `sdslot.dat`, garde les métadonnées Vita des autres slots, et rien n'est envoyé sans copie de la Vita.
+
 ### `test_cli.py`
 
-`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente. Puis `backup` (PC, Vita, dossier absent), `history` (vide, jeu inconnu) et un `restore` complet : le test vérifie que la version est écrite et que l'ancien contenu a été copié dans le stockage.
+`--version`, l'aide, puis `ls` contre le faux serveur, avec `--host` ou avec un fichier de config, et le message d'erreur quand la config est absente. Puis `backup` (PC, Vita, dossier absent), `history` (vide, jeu inconnu) et un `restore` complet : le test vérifie que la version est écrite et que l'ancien contenu a été copié dans le stockage. Enfin `pull` et `push` de bout en bout (avec un faux Steam fermé), et un `--slots` invalide.
 
 ---
 

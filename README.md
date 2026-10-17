@@ -14,6 +14,10 @@ Phase 2 (transport FTP) : client FTP pour VitaShell (lister, télécharger, envo
 
 Phase 3 (modèle et sécurité) : fiches de jeu YAML, stockage versionné des sauvegardes, copie de sécurité avant tout écrasement, commandes `vitasync history` et `vitasync restore`.
 
+Phase 4 (jeu en copie directe) : reportée, P4G passe en premier.
+
+Phase 5 (Persona 4 Golden) : commandes `vitasync pull` et `vitasync push`, conversion via p4g-saveconv, vérification des MD5 et régénération de `remotecache.vdf`. L'étape *Open decrypted* de VitaShell reste manuelle.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
@@ -78,6 +82,10 @@ Pour ne pas répéter l'adresse, créer `%APPDATA%\vitasync\config.toml` (`~/.co
 host = "192.168.1.42"
 port = 1337      # port de VitaShell, valeur par défaut
 timeout = 10     # secondes
+
+[steam]          # nécessaire pour pull et push
+userdata = 'C:/Program Files (x86)/Steam/userdata/125320760'
+p4g_saveconv = 'F:/Projets/VitaPcSynchro/outils/p4g-saveconv'
 ```
 
 Les chemins Vita s'écrivent `ux0:data/p4g_dump` ; la forme FTP `/ux0:/data/p4g_dump` est aussi acceptée. Les tests FTP tournent contre un faux serveur local (pyftpdlib), sans console.
@@ -92,6 +100,33 @@ uv run vitasync restore p4g 20261017-142300-000000 --to "C:\chemin\vers\remote"
 ```
 
 `restore` ne remplace que les fichiers présents dans la version restaurée, après avoir copié le dossier cible. L'option `--store` change le dossier du stockage.
+
+### Persona 4 Golden : pull et push
+
+`--slots` est obligatoire : `7`, `1,7`, `system` (pour `system.bin`) ou `all`.
+
+**Vita → PC (`pull`)**
+
+1. Dans VitaShell : `PCSB00245` → Triangle → *Open decrypted*, copier le contenu dans `ux0:data/p4g_dump`.
+2. Fermer Steam complètement, puis :
+
+   ```bash
+   uv run vitasync pull p4g --slots 7
+   ```
+
+   VitaSync télécharge `p4g_dump`, l'enregistre, le convertit avec p4g-saveconv, vérifie les MD5, copie le dossier Steam `1113000` dans le stockage, puis n'écrit que les slots demandés et régénère `remotecache.vdf`. Il refuse de tourner si Steam est ouvert.
+
+**PC → Vita (`push`)**
+
+1. Rafraîchir `ux0:data/p4g_dump` comme ci-dessus : c'est la copie de sécurité de la sauvegarde Vita, et `push` refuse de tourner sans elle.
+2. Lancer :
+
+   ```bash
+   uv run vitasync push p4g --slots 7
+   ```
+
+   VitaSync convertit les slots Steam et dépose dans `ux0:data/p4g_in` les `.bin` demandés et un `sce_sys/sdslot.dat` où seuls ces slots sont remplacés.
+3. Dans VitaShell : `PCSB00245` → Triangle → *Open decrypted*, coller le contenu de `p4g_in` à l'intérieur (sans remplacer le dossier), puis sortir avec Rond.
 
 Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
