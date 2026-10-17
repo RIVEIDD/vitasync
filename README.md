@@ -6,7 +6,9 @@ Jeu pilote : **Persona 4 Golden** (Steam `1113000` ↔ PS Vita `PCSB00245`).
 
 ## État du projet
 
-Phase 0 (préparation) : procédure manuelle PC ↔ Vita validée dans les deux sens pour P4G. Aucun code applicatif pour l'instant ; la phase 1 (squelette Python) est la suite.
+Phase 0 (préparation) : procédure manuelle PC ↔ Vita validée dans les deux sens pour P4G.
+
+Phase 1 (squelette Python) : paquet `vitasync`, commande `vitasync --version`, outillage qualité et CI GitLab.
 
 ## Procédure manuelle validée (P4G)
 
@@ -38,6 +40,26 @@ Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv)
 - Les `.bin` PC font 217 937 octets, ceux produits par l'outil 216 381 : seul le nouveau slot 7 a été ajouté côté Steam, les slots 1 à 6 n'ont pas été écrasés.
 - Le `remotecache.vdf` généré par l'outil (sans `ChangeNumber` ni `ostype`) a été accepté par Steam.
 - Steam Cloud activé pendant le test : aucun conflit, Steam a repris la sauvegarde la plus récente.
+
+## Développement
+
+Prérequis : Python 3.12 ou plus et [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync                  # crée .venv et installe les dépendances de dev
+uv run vitasync --version
+```
+
+Vérifications (les mêmes que la CI GitLab) :
+
+```bash
+uv run ruff check
+uv run ruff format --check
+uv run mypy
+uv run pytest
+```
+
+Code dans `src/vitasync/`, tests dans `tests/`. Les docstrings suivent la convention Google, mypy tourne en mode strict.
 
 ## Règles
 
