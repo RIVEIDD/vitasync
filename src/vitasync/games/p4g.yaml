@@ -1,0 +1,12 @@
+# Persona 4 Golden : Steam 1113000 <-> PS Vita PCSB00245 (EUR).
+# Procédure manuelle validée en phase 0, voir le README.
+id: p4g
+name: Persona 4 Golden
+adapter: p4g
+pc:
+  steam_appid: 1113000
+  # Relatif au dossier Steam\userdata\<id>\ de l'utilisateur.
+  path: 1113000/remote
+vita:
+  title_id: PCSB00245
+  path: ux0:user/00/savedata/PCSB00245

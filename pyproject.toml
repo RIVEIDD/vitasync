@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Synchronise les sauvegardes de jeux entre le PC et la PS Vita."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0.3",
+]
 
 [project.scripts]
 vitasync = "vitasync.cli:main"
@@ -19,6 +21,7 @@ dev = [
     "pyftpdlib>=2.2.0",
     "pytest>=8.3",
     "ruff>=0.8",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [tool.ruff]
