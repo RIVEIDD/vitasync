@@ -110,7 +110,9 @@ class VitaFtpClient:
             ftp.close()
             raise VitaUnreachableError(
                 f"Vita injoignable sur {self._config.host}:{self._config.port} ({exc}). "
-                "Vérifie que le FTP de VitaShell est lancé (Select) et l'adresse IP."
+                "Vérifie que le FTP de VitaShell est lancé (Select), l'adresse IP, et "
+                "qu'aucun autre client FTP (FileZilla, WinSCP...) n'est connecté : "
+                "VitaShell n'en sert qu'un à la fois."
             ) from exc
         self._ftp = ftp
 
