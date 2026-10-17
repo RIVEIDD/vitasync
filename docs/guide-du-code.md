@@ -176,7 +176,7 @@ with VitaFtpClient(config) as ftp:
 - `download_file(remote, local)` écrit d'abord dans `fichier.part`, puis renomme une fois le transfert complet. Si le transfert est coupé, le `.part` est supprimé et l'ancien fichier local reste intact. C'est l'application de la règle « jamais d'écrasement sans filet ».
 - `download_dir` et `upload_dir` parcourent un dossier récursivement : pour chaque entrée, un fichier est transféré et un sous-dossier provoque un nouvel appel de la même fonction.
 - `dir_exists(remote)` teste si un dossier existe en essayant d'y entrer (`CWD`). `make_dir(remote)` s'en sert pour ne créer le dossier (`MKD`) que si besoin : on peut donc renvoyer deux fois le même dossier.
-- `remove_tree(remote)` supprime un dossier et tout son contenu. Il ne sert qu'à vider `ux0:data/p4g_in`, le dossier de transit de `push`, après en avoir fait une copie : sinon, des fichiers d'un ancien `push` y traîneraient et seraient collés par erreur.
+- `remove_tree(remote)` supprime un dossier et tout son contenu. Il ne sert qu'à vider `ux0:data/p4g_in`, le dossier de transit de `push`, après en avoir fait une copie : sinon, des fichiers d'un ancien `push` y traîneraient et seraient collés par erreur. Il envoie `DELE` avec `voidcmd`, qui accepte toute réponse 2xx : VitaShell répond « 226 » là où `ftplib.delete` exige « 250 ».
 
 **Pourquoi.** Toute la complexité réseau reste dans ce fichier. Les phases suivantes appelleront `download_dir` et `upload_dir` sans se soucier du FTP.
 
@@ -269,6 +269,7 @@ Dans les deux cas, **seuls les fichiers présents dans `source` sont remplacés*
 
 - **Les slots.** Un slot est un numéro : 0 pour `system.bin` (données communes), 1 à 16 pour `data0001.bin` à `data0016.bin`. `bin_name(7)` donne `data0007.bin`. `parse_slots("1,7,system")` lit l'option `--slots` et renvoie `[0, 1, 7]` ; `all` renvoie tout.
 - **`check_binslot(bin, binslot)`** vérifie un `.binslot` PC. Ce fichier commence par `SAVE0001`, puis le MD5 de ses propres métadonnées suivies du mot `P4GOLDEN`, puis le MD5 du `.bin`. Si l'une des deux empreintes est fausse, le jeu refuserait la sauvegarde : on s'arrête avant d'écrire quoi que ce soit.
+- **`check_english(binslot)`** refuse un slot PC sauvegardé dans une autre langue que l'anglais. Le jeu PC écrit les métadonnées dans sa langue, avec une ligne `LANG<n>` (`LANG1` pour l'anglais, `LANG5` pour le français). p4g-saveconv ne retire que `LANG1`, et la Vita européenne, en anglais seulement, n'affiche plus aucune sauvegarde si un slot est en français : c'est ce qui est arrivé lors du premier vrai test. `system.binslot` n'a pas de ligne `LANG` et passe toujours.
 - **`merge_sdslot(base, new, slots)`.** Côté Vita, les métadonnées de tous les slots sont dans un seul fichier, `sce_sys/sdslot.dat` : un octet « actif » par slot à l'adresse `0x200 + slot`, et un bloc de `0x400` octets par slot à partir de `0x400`. La fonction part du `sdslot.dat` actuel de la Vita et ne remplace que les blocs des slots envoyés. Sans elle, envoyer le slot 7 remplacerait aussi l'affichage des slots 1 à 6 par celui du PC.
 - **`run_saveconv(dossier_outil, script, dossier)`** lance un script de p4g-saveconv avec le même Python que VitaSync (`sys.executable`) et récupère le dossier `<dossier>_conv` qu'il produit. Si le script échoue, son message d'erreur est remonté dans une `ConversionError`.
 - **`vita_to_pc(...)`** copie la sauvegarde Vita dans un dossier temporaire (l'outil écrit à côté de son entrée, et on ne veut rien salir), lance `convert_vita2pc.py`, vérifie chaque `.binslot` produit, puis ne garde que les slots demandés.
@@ -337,7 +338,7 @@ Quand le fichier grossira, chaque commande pourra partir dans son propre module 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 92, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 95, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
