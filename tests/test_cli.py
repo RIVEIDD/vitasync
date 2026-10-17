@@ -5,6 +5,7 @@ from fake_vita import FakeVita
 
 from vitasync import __version__
 from vitasync.cli import main
+from vitasync.store import LocalStore
 
 
 def test_version_affiche_la_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -45,3 +46,43 @@ def test_ls_lit_le_fichier_de_config(
 def test_ls_sans_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["ls", "ux0:data", "--config", str(tmp_path / "absent.toml")]) == 1
     assert "introuvable" in capsys.readouterr().err
+
+
+def test_history_vide(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["history", "p4g", "--store", str(tmp_path)]) == 0
+    assert "Aucune version enregistrée pour Persona 4 Golden" in capsys.readouterr().out
+
+
+def test_history_jeu_inconnu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["history", "zelda", "--store", str(tmp_path)]) == 1
+    assert "Jeu inconnu" in capsys.readouterr().err
+
+
+def test_history_puis_restore(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    store = LocalStore(tmp_path / "store")
+    saved = tmp_path / "sauvegarde"
+    saved.mkdir()
+    (saved / "data0001.bin").write_bytes(b"version enregistree")
+    version = store.snapshot("p4g", saved, origin="pc")
+    dest = tmp_path / "remote"
+    dest.mkdir()
+    (dest / "data0001.bin").write_bytes(b"version actuelle")
+
+    assert main(["history", "p4g", "--store", str(store.root)]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(version.id) and out.rstrip().endswith("pc")
+
+    args = ["restore", "p4g", version.id, "--to", str(dest), "--store", str(store.root)]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "Copie de sécurité" in out and f"Version {version.id} restaurée" in out
+    assert (dest / "data0001.bin").read_bytes() == b"version enregistree"
+    backup = store.get("p4g")
+    assert backup.origin == "backup-pc"
+    assert (backup.files / "data0001.bin").read_bytes() == b"version actuelle"
+
+
+def test_restore_version_introuvable(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = ["restore", "p4g", "1999", "--to", str(tmp_path / "d"), "--store", str(tmp_path)]
+    assert main(args) == 1
+    assert "Aucune version" in capsys.readouterr().err
