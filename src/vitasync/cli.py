@@ -99,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("game", help="identifiant du jeu, par exemple p4g")
     sync.add_argument("--store", type=Path, default=None, help=store_help)
     add_connection_options(sync)
+
+    subparsers.add_parser("gui", help="ouvre la fenêtre de VitaSync")
     return parser
 
 
@@ -360,6 +362,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_history(args)
     if args.command == "restore":
         return run_restore(args)
+    if args.command == "gui":
+        from vitasync.gui import main as gui_main  # Tkinter seulement si besoin
+
+        return gui_main()
     if args.command in ("pull", "push", "status", "sync"):
         return run_transfer(args)
     parser.print_help()

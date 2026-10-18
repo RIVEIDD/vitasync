@@ -11,6 +11,10 @@ dependencies = [
 [project.scripts]
 vitasync = "vitasync.cli:main"
 
+# Lancement de la fenêtre sans console (pythonw sous Windows).
+[project.gui-scripts]
+vitasync-gui = "vitasync.gui:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
