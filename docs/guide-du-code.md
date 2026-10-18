@@ -16,6 +16,8 @@ VitaPcSynchro/
 │   ├── __main__.py       permet « python -m vitasync »
 │   ├── py.typed          marqueur « ce paquet est typé »
 │   ├── cli.py            la commande vitasync et ses sous-commandes
+│   ├── service.py        actions communes à la ligne de commande et à la fenêtre
+│   ├── gui.py            la fenêtre (Tkinter)
 │   ├── config.py         lecture du fichier de configuration
 │   ├── ftp.py            dialogue FTP avec VitaShell
 │   ├── manifest.py       lecture des fiches de jeu
@@ -339,6 +341,34 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 
 **Ce qu'on ne sait pas.** Le rôle des 7 premiers octets de l'en-tête Vita : ce n'est ni un MD5, ni un SHA, ni un CRC du contenu, et le jeu ne les vérifie pas (essai réussi sur ta Vita).
 
+### `service.py`
+
+**Ce qu'il fait.** C'est la couche commune entre l'utilisateur et les modules de jeu. `cli.py` et `gui.py` ne parlent qu'à lui :
+- `open_session()` lit la configuration (Vita, Steam s'il est configuré) et ouvre le stockage. Le résultat, `Session`, regroupe ce dont toute action a besoin.
+- `game_status(session, ftp, jeu)` choisit le bon module (`p4g_sync` ou `hotline_miami_sync`), compare les deux côtés et propose un sens avec `plan_sync`. Le résultat, `GameStatus`, porte aussi `summary` (« Identiques », « Plus avancé sur PC »...), `conflict` si les deux côtés ont avancé, et `fresh`, faux quand ce n'est pas l'appli VitaSync qui répond (la copie Vita peut alors être ancienne).
+- `transfer(...)` lance le `pull` ou le `push` du bon module.
+- `describe_plan` et `describe_result` rédigent les phrases affichées à l'utilisateur.
+- `USER_ERRORS` liste les erreurs prévues, à montrer telles quelles.
+
+**Pourquoi.** Sans cette couche, la fenêtre aurait dû recopier la logique de `cli.py`, et les deux auraient fini par diverger.
+
+**Comment le maintenir.** Un nouveau jeu s'ajoute dans `SUPPORTED_ADAPTERS`, `game_status` et `transfer`, puis il apparaît automatiquement dans la fenêtre et les commandes.
+
+### `gui.py`
+
+**Ce qu'il fait.** La fenêtre, en Tkinter (livré avec Python, donc sans dépendance) :
+- en haut, l'adresse de la Vita, qui répond (« appli VitaSync » ou « autre FTP »), et les boutons **Actualiser** et **Synchroniser** ;
+- la liste des jeux et leur état ; un clic sur un jeu affiche ses slots (`slot_rows`, `format_progress`) ;
+- en bas, un journal.
+
+Les échanges avec la Vita prennent quelques secondes : `_run` les lance dans un fil d'exécution à part, pour que la fenêtre ne se fige pas. Le résultat revient par une file (`queue.Queue`) que `_poll` relit toutes les 100 ms, parce que seul le fil principal a le droit de toucher à Tkinter. Pendant un échange, les boutons sont grisés.
+
+**Synchroniser** demande toujours confirmation, en annonçant le sens. Après un push sans l'appli, une fenêtre rappelle le *Restore* à faire dans Save Manager.
+
+**Lancement.** `vitasync gui`, ou `vitasync-gui.exe` (déclaré dans `[project.gui-scripts]` de `pyproject.toml`), qui s'ouvre sans console.
+
+**Comment le maintenir.** La fenêtre ne doit contenir que de l'affichage : toute nouvelle action passe d'abord par `service.py`. Les tests (`tests/test_gui.py`) vérifient les fonctions d'affichage et que la fenêtre s'ouvre ; ils sont sautés là où Tkinter manque (images Docker de la CI).
+
 ### `cli.py`
 
 **Ce qu'il fait.** C'est la ligne de commande, construite avec `argparse` (standard).
@@ -352,7 +382,7 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 - `run_restore(args)` vérifie le jeu, retrouve la version, puis appelle `write_pc_files` pour l'écrire dans le dossier `--to`. Le dossier de destination est obligatoire pour l'instant : la fiche ne suffit pas encore à trouver ton dossier Steam. La restauration vers la Vita viendra avec les adaptateurs, puisque P4G demande une conversion.
 - `open_store(args)` ouvre le stockage de `--store`, ou celui par défaut.
 - `run_transfer(args)` sert à `pull` et `push` : il lit `--slots`, la fiche, les sections `[vita]` et `[steam]` de la config, ouvre la connexion FTP et appelle `p4g_sync`. Après un `push`, il affiche la manipulation à faire dans VitaShell.
-- `run_transfer` choisit le module selon l'adaptateur de la fiche (`p4g` ou `hotline_miami`). `--slots` n'est obligatoire que pour P4G, et la section `[steam]` de la config n'est exigée que pour lui.
+- `run_transfer` passe par `service.py` pour l'état, le choix du sens et le transfert ; il ne garde que l'affichage. `--slots` n'est obligatoire que pour P4G, et la section `[steam]` de la config n'est exigée que pour lui.
 - `status` et `sync` passent aussi par `run_transfer` : `status` affiche le tableau (`print_status`, `format_play_time`) ; `sync` appelle `plan_sync`, annonce le sens choisi, puis enchaîne sur `pull` ou `push` avec la même connexion. Les slots de `pull`/`push` sont vérifiés avant toute connexion.
 - `main(argv)` analyse les arguments et aiguille vers la bonne sous-commande. Sans sous-commande, elle affiche l'aide. Le paramètre `argv` permet aux tests d'appeler `main(["ls", ...])` sans lancer de vrai processus.
 
@@ -398,7 +428,7 @@ La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 117, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 124, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.

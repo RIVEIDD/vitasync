@@ -24,6 +24,8 @@ Phase 6 (en cours) : `vitasync status` compare le temps de jeu de chaque slot en
 
 Phase 4 (deuxième jeu) : **Hotline Miami** (Steam 219150 ↔ Vita PCSB00318), sauvegarde `Documents\My Games\HotlineMiami\SaveData.sav`. Les fiches de jeu peuvent désormais viser des dossiers PC hors Steam.
 
+Fenêtre PC : `vitasync gui` (ou `.venv\Scripts\vitasync-gui.exe` en double-clic, sans console) affiche l'état de chaque jeu et synchronise en un clic, avec confirmation.
+
 ## Procédure manuelle validée (P4G)
 
 Outil de conversion : [p4g-saveconv](https://github.com/zarroboogs/p4g-saveconv), cloné dans `outils/` (non versionné).
