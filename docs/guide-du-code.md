@@ -363,7 +363,7 @@ Le paramètre `steam_running` de `pull` permet aux tests de simuler un Steam ouv
 
 Les échanges avec la Vita prennent quelques secondes : `_run` les lance dans un fil d'exécution à part, pour que la fenêtre ne se fige pas. Le résultat revient par une file (`queue.Queue`) que `_poll` relit toutes les 100 ms, parce que seul le fil principal a le droit de toucher à Tkinter. Pendant un échange, les boutons sont grisés.
 
-**Synchroniser** demande toujours confirmation, en annonçant le sens. Après un push sans l'appli, une fenêtre rappelle le *Restore* à faire dans Save Manager.
+**Synchroniser** demande toujours confirmation, en annonçant le sens. **Tout synchroniser** fait de même pour tous les jeux qui en ont besoin (`service.pending` écarte les jeux identiques et signale les conflits), avec une seule confirmation ; un jeu en échec n'empêche pas les suivants. Après un push sans l'appli, une fenêtre rappelle le *Restore* à faire dans Save Manager.
 
 **Lancement.** `vitasync gui`, ou `vitasync-gui.exe` (déclaré dans `[project.gui-scripts]` de `pyproject.toml`), qui s'ouvre sans console.
 
@@ -428,7 +428,7 @@ La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 124, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `python -m uv run pytest`. Il y en a 125, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.

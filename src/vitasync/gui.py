@@ -99,6 +99,8 @@ class VitaSyncWindow(tk.Tk):
         self.refresh_button.pack(side="right")
         self.sync_button = ttk.Button(top, text="Synchroniser", command=self.sync_selected)
         self.sync_button.pack(side="right", padx=6)
+        self.sync_all_button = ttk.Button(top, text="Tout synchroniser", command=self.sync_all)
+        self.sync_all_button.pack(side="right")
 
         self.game_list = ttk.Treeview(
             self, columns=("state",), show="tree headings", height=len(self.games) or 1
@@ -136,6 +138,7 @@ class VitaSyncWindow(tk.Tk):
         state = "disabled" if busy else "normal"
         self.refresh_button.configure(state=state)
         self.sync_button.configure(state=state)
+        self.sync_all_button.configure(state=state)
         self.configure(cursor="watch" if busy else "")
 
     def _run(self, work: Callable[[], Any], done: Callable[[Any], None]) -> None:
@@ -218,6 +221,51 @@ class VitaSyncWindow(tk.Tk):
         for name, pc, vita, newer in slot_rows(self.statuses[game_id]):
             self.slot_list.insert("", "end", text=name, values=(pc, vita, newer))
 
+    def sync_all(self) -> None:
+        """Synchronise tous les jeux qui en ont besoin, après une seule confirmation."""
+        if not self.statuses:
+            self.write_log("Clique d'abord sur Actualiser.")
+            return
+        todo, conflicts = service.pending(self.statuses.values())
+        for status in conflicts:
+            self.write_log(f"{status.game.name} : conflit, à trancher à la main.")
+        if not todo:
+            self.write_log("Rien à synchroniser.")
+            return
+        plans = "\n".join(f"• {s.game.name} : {service.describe_plan(s)}" for s in todo)
+        question = f"{plans}\n\nUne copie de sécurité sera faite avant chaque écriture. Continuer ?"
+        if not messagebox.askyesno("Tout synchroniser", question, parent=self):
+            return
+
+        def work() -> list[str]:
+            lines: list[str] = []
+            with VitaFtpClient(self.session.vita) as ftp:
+                for status in todo:
+                    assert status.direction is not None
+                    lines.append(f"{status.game.name} : {service.describe_plan(status)}")
+                    try:
+                        result = service.transfer(
+                            self.session, ftp, status.game, status.direction, status.slots
+                        )
+                    except service.USER_ERRORS as exc:
+                        # Un jeu en échec n'empêche pas les suivants.
+                        lines.append(f"Erreur : {exc}")
+                        continue
+                    lines += service.describe_result(status.game, status.direction, result)
+            return lines
+
+        self._run(work, self._synced)
+
+    def _synced(self, lines: list[str]) -> None:
+        self._set_busy(False)
+        for line in lines:
+            self.write_log(line)
+        manual = [line for line in lines if line.startswith("Dans Save Manager")]
+        if manual:
+            # Sans l'appli, la sauvegarde n'est pas encore en place sur la Vita.
+            messagebox.showinfo("Dernière étape sur la Vita", "\n".join(manual), parent=self)
+        self.refresh()
+
     def sync_selected(self) -> None:
         """Synchronise le jeu sélectionné, après confirmation."""
         game_id = self._selected()
@@ -245,17 +293,7 @@ class VitaSyncWindow(tk.Tk):
                 result = service.transfer(self.session, ftp, status.game, direction, status.slots)
             return service.describe_result(status.game, direction, result)
 
-        def done(lines: list[str]) -> None:
-            self._set_busy(False)
-            for line in lines:
-                self.write_log(line)
-            manual = [line for line in lines if line.startswith("Dans Save Manager")]
-            if manual:
-                # Sans l'appli, la sauvegarde n'est pas encore en place sur la Vita.
-                messagebox.showinfo("Dernière étape sur la Vita", manual[0], parent=self)
-            self.refresh()
-
-        self._run(work, done)
+        self._run(work, self._synced)
 
 
 def main() -> int:

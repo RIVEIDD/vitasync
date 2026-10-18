@@ -42,5 +42,7 @@ def test_la_fenetre_s_ouvre(tmp_path: Path) -> None:
         assert window.game_list.item("p4g", "values") == ("?",)
         window.sync_selected()  # aucun jeu choisi : simple message dans le journal
         assert "Choisis un jeu" in window.log.get("1.0", "end")
+        window.sync_all()  # pas encore d'état : il faut Actualiser d'abord
+        assert "Clique d'abord sur Actualiser" in window.log.get("1.0", "end")
     finally:
         window.destroy()

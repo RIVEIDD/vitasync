@@ -5,6 +5,7 @@ module de jeu (``p4g_sync`` ou ``hotline_miami_sync``), décide du sens d'une
 synchronisation et rédige les messages pour l'utilisateur.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -233,3 +234,19 @@ def describe_result(game: GameManifest, direction: str, result: TransferResult) 
         )
         lines.append(f"Dans Save Manager : {game.name} > {slot} > Restore.")
     return lines
+
+
+def pending(statuses: Iterable[GameStatus]) -> tuple[list[GameStatus], list[GameStatus]]:
+    """Trie des états de jeux pour « Tout synchroniser ».
+
+    Args:
+        statuses: États des jeux, issus de :func:`game_status`.
+
+    Returns:
+        Les jeux à synchroniser (un sens est proposé) et les jeux en conflit,
+        qui restent à trancher à la main. Les jeux identiques sont ignorés.
+    """
+    statuses = list(statuses)
+    todo = [status for status in statuses if status.direction is not None]
+    conflicts = [status for status in statuses if status.conflict is not None]
+    return todo, conflicts

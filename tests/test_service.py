@@ -48,3 +48,12 @@ def test_jeu_non_pris_en_charge() -> None:
 def test_resume_si_la_copie_vita_est_ancienne() -> None:
     stale = replace(status([SlotState(7, 20, 10)]), fresh=False)
     assert stale.summary == "Plus avancé sur PC (copie Vita peut-être ancienne)"
+
+
+def test_pending() -> None:
+    same = status([SlotState(1, 10, 10)])
+    push = status([SlotState(7, 20, 10)])
+    conflict = status([SlotState(1, 20, 10), SlotState(2, 1, 5)])
+    todo, conflicts = service.pending([same, push, conflict])
+    assert todo == [push]
+    assert conflicts == [conflict]
