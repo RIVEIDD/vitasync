@@ -77,7 +77,7 @@ Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, 
 **Pourquoi.** Un seul fichier remplace `setup.py`, `requirements.txt`, `setup.cfg`, `mypy.ini` et compagnie.
 
 **Comment le maintenir.**
-- Ajouter une dépendance d'exécution : `python -m uv add <paquet>`. Pour un outil de dev : `python -m uv add --dev <paquet>`. Ne modifie pas les listes à la main : uv met à jour `uv.lock` en même temps.
+- Ajouter une dépendance d'exécution : `uv add <paquet>`. Pour un outil de dev : `uv add --dev <paquet>`. Ne modifie pas les listes à la main : uv met à jour `uv.lock` en même temps.
 - Changer de version : modifie `version`. La commande `vitasync --version` la lit automatiquement (voir `__init__.py`).
 - Assouplir une règle ruff qui te gêne : ajoute son code dans une liste `ignore = [...]` sous `[tool.ruff.lint]`, plutôt que de retirer toute une famille.
 
@@ -87,7 +87,7 @@ Ordre de lecture conseillé : `config.py`, `ftp.py`, `manifest.py`, `store.py`, 
 
 **Pourquoi.** Ton PC et la CI installent ainsi exactement les mêmes versions. La CI échoue d'ailleurs si le fichier n'est pas à jour (`uv sync --locked`).
 
-**Comment le maintenir.** Ne jamais l'éditer à la main. uv le régénère à chaque `uv add` ou `uv remove`. `python -m uv lock --upgrade` passe tout aux dernières versions. Commite-le toujours avec `pyproject.toml`.
+**Comment le maintenir.** Ne jamais l'éditer à la main. uv le régénère à chaque `uv add` ou `uv remove`. `uv lock --upgrade` passe tout aux dernières versions. Commite-le toujours avec `pyproject.toml`.
 
 ### `.gitignore`
 
@@ -428,7 +428,7 @@ La boucle de développement de l'appli, via vitacompanion. `deploy <vpk>` ferme 
 
 ## Les tests : `tests/`
 
-Lance-les avec `python -m uv run pytest`. Il y en a 125, et ils tournent en environ trois secondes, sans console.
+Lance-les avec `uv run pytest`. Il y en a 125, et ils tournent en environ trois secondes, sans console.
 
 Quelques notions pytest utiles :
 - Une **fixture** est une ressource préparée automatiquement pour un test : il suffit de la nommer en paramètre. `tmp_path` (dossier temporaire neuf, fourni par pytest), `capsys` (capture de ce qui est affiché) et `monkeypatch` (remplacement temporaire d'une fonction) sont fournies par pytest ; `fake_vita` est la nôtre.
@@ -500,10 +500,10 @@ Noms de fichiers et `--slots`, `check_binslot` (fichier correct, `.bin` modifié
 Avant chaque commit :
 
 ```bash
-python -m uv run ruff format          # remet en forme automatiquement
-python -m uv run ruff check --fix     # corrige ce qui peut l'être
-python -m uv run mypy
-python -m uv run pytest
+uv run ruff format          # remet en forme automatiquement
+uv run ruff check --fix     # corrige ce qui peut l'être
+uv run mypy
+uv run pytest
 ```
 
 Si les quatre passent en local, la CI passera aussi.

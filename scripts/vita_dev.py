@@ -1,11 +1,11 @@
 """Boucle de développement de l'appli Vita, via vitacompanion (FTP 1337, commandes 1338).
 
 Usage (depuis la racine du dépôt) :
-    python -m uv run python scripts/vita_dev.py deploy vita/build/vitasync.vpk
-    python -m uv run python scripts/vita_dev.py cmd "launch VSYNC0001"
-    python -m uv run python scripts/vita_dev.py crashes
-    python -m uv run python scripts/vita_dev.py screenshot travail/screens/ecran.png
-    python -m uv run python scripts/vita_dev.py get ux0:data/vitasync/screen.bmp travail/screen.bmp
+    uv run python scripts/vita_dev.py deploy vita/build/vitasync.vpk
+    uv run python scripts/vita_dev.py cmd "launch VSYNC0001"
+    uv run python scripts/vita_dev.py crashes
+    uv run python scripts/vita_dev.py screenshot travail/screens/ecran.png
+    uv run python scripts/vita_dev.py get ux0:data/vitasync/screen.bmp travail/screen.bmp
 
 Outil de développement uniquement : il suppose vitacompanion chargé sous *main.
 """
