@@ -114,6 +114,9 @@ class GameStatus:
         direction: ``"pull"``, ``"push"`` ou ``None`` si rien à faire ou conflit.
         slots: Slots à copier dans ce sens.
         conflict: Explication du conflit, ou ``None``.
+        fresh: ``True`` si l'appli VitaSync vient de copier la sauvegarde
+            Vita ; ``False`` si l'état vient d'une copie plus ancienne (FTP de
+            VitaShell ou de vitacompanion), peut-être dépassée.
     """
 
     game: GameManifest
@@ -122,15 +125,18 @@ class GameStatus:
     direction: str | None
     slots: list[int]
     conflict: str | None = None
+    fresh: bool = True
 
     @property
     def summary(self) -> str:
         """Résumé d'une ligne : ce qu'il faut faire pour ce jeu."""
         if self.conflict is not None:
-            return "Conflit : à trancher à la main"
-        if self.direction is None:
-            return "Identiques"
-        return "Plus avancé sur PC" if self.direction == "push" else "Plus avancé sur Vita"
+            text = "Conflit : à trancher à la main"
+        elif self.direction is None:
+            text = "Identiques"
+        else:
+            text = "Plus avancé sur PC" if self.direction == "push" else "Plus avancé sur Vita"
+        return text if self.fresh else f"{text} (copie Vita peut-être ancienne)"
 
 
 def game_status(session: Session, ftp: VitaFtpClient, game: GameManifest) -> GameStatus:
@@ -146,6 +152,7 @@ def game_status(session: Session, ftp: VitaFtpClient, game: GameManifest) -> Gam
         ``conflict``.
     """
     check_supported(game)
+    fresh = ftp.is_vitasync_app()
     if game.adapter == "p4g":
         states = p4g_sync.status(ftp, _steam_for(session, game), game)
     else:
@@ -154,8 +161,8 @@ def game_status(session: Session, ftp: VitaFtpClient, game: GameManifest) -> Gam
     try:
         direction, slots = p4g_sync.plan_sync(states)
     except SyncError as exc:
-        return GameStatus(game, states, in_levels, None, [], conflict=str(exc))
-    return GameStatus(game, states, in_levels, direction, slots)
+        return GameStatus(game, states, in_levels, None, [], conflict=str(exc), fresh=fresh)
+    return GameStatus(game, states, in_levels, direction, slots, fresh=fresh)
 
 
 def transfer(

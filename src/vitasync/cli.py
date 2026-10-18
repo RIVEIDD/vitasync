@@ -226,6 +226,11 @@ def run_transfer(args: argparse.Namespace) -> int:
         with VitaFtpClient(session.vita) as ftp:
             if command in ("status", "sync"):
                 status = service.game_status(session, ftp, game)
+                if not status.fresh:
+                    print(
+                        "Attention : l'appli VitaSync n'est pas au bout du FTP ; état tiré "
+                        "de la dernière copie du slot 0, peut-être ancienne."
+                    )
                 if command == "status":
                     print_status(status.states, as_time=not status.in_levels)
                     if status.conflict:

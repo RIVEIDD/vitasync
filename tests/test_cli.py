@@ -189,7 +189,9 @@ def test_status_et_sync_deja_synchronise(
     config, _ = transfer_setup(fake_vita, tmp_path, monkeypatch)
 
     assert main(["status", "p4g", "--config", str(config)]) == 0
-    assert capsys.readouterr().out.startswith("Slot")
+    out = capsys.readouterr().out
+    assert "Attention" in out  # faux serveur : pas l'appli VitaSync
+    assert "Slot" in out
     args = ["sync", "p4g", "--config", str(config), "--store", str(tmp_path / "s")]
     assert main(args) == 0
     assert "Déjà synchronisé" in capsys.readouterr().out

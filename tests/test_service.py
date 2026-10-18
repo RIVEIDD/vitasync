@@ -43,3 +43,8 @@ def test_jeu_non_pris_en_charge() -> None:
     game = replace(find_game("p4g"), adapter="inconnu")
     with pytest.raises(SyncError, match="pas encore pris en charge"):
         service.check_supported(game)
+
+
+def test_resume_si_la_copie_vita_est_ancienne() -> None:
+    stale = replace(status([SlotState(7, 20, 10)]), fresh=False)
+    assert stale.summary == "Plus avancé sur PC (copie Vita peut-être ancienne)"

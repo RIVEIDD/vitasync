@@ -93,7 +93,8 @@ class VitaSyncWindow(tk.Tk):
         top = ttk.Frame(self, padding=8)
         top.pack(fill="x")
         vita = self.session.vita
-        ttk.Label(top, text=f"Vita : {vita.host}:{vita.port}").pack(side="left")
+        self.vita_label = ttk.Label(top, text=f"Vita : {vita.host}:{vita.port}")
+        self.vita_label.pack(side="left")
         self.refresh_button = ttk.Button(top, text="Actualiser", command=self.refresh)
         self.refresh_button.pack(side="right")
         self.sync_button = ttk.Button(top, text="Synchroniser", command=self.sync_selected)
@@ -169,20 +170,31 @@ class VitaSyncWindow(tk.Tk):
         """Interroge la Vita et met à jour l'état de chaque jeu."""
         self.write_log("Lecture des sauvegardes...")
 
-        def work() -> dict[str, GameStatus | str]:
+        def work() -> tuple[bool, dict[str, GameStatus | str]]:
             found: dict[str, GameStatus | str] = {}
             with VitaFtpClient(self.session.vita) as ftp:
+                is_app = ftp.is_vitasync_app()
                 for game_id, game in self.games.items():
                     try:
                         found[game_id] = service.game_status(self.session, ftp, game)
                     except service.USER_ERRORS as exc:
                         found[game_id] = str(exc)
-            return found
+            return is_app, found
 
         self._run(work, self._refreshed)
 
-    def _refreshed(self, found: dict[str, GameStatus | str]) -> None:
+    def _refreshed(self, answer: tuple[bool, dict[str, GameStatus | str]]) -> None:
         self._set_busy(False)
+        is_app, found = answer
+        vita = self.session.vita
+        server = "appli VitaSync" if is_app else "autre FTP (pas l'appli VitaSync)"
+        self.vita_label.configure(text=f"Vita : {vita.host}:{vita.port} ({server})")
+        if not is_app:
+            self.write_log(
+                "Attention : ce n'est pas l'appli VitaSync qui répond. L'état vient de la "
+                "dernière copie du slot 0, peut-être ancienne, et un push ne sera pas "
+                "restauré automatiquement. Ouvre l'appli VitaSync et vérifie le port."
+            )
         for game_id, value in found.items():
             if isinstance(value, GameStatus):
                 self.statuses[game_id] = value
@@ -237,6 +249,10 @@ class VitaSyncWindow(tk.Tk):
             self._set_busy(False)
             for line in lines:
                 self.write_log(line)
+            manual = [line for line in lines if line.startswith("Dans Save Manager")]
+            if manual:
+                # Sans l'appli, la sauvegarde n'est pas encore en place sur la Vita.
+                messagebox.showinfo("Dernière étape sur la Vita", manual[0], parent=self)
             self.refresh()
 
         self._run(work, done)
