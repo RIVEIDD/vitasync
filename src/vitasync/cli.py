@@ -6,19 +6,16 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from vitasync import __version__, hotline_miami_sync, p4g_sync
+from vitasync import __version__, p4g_sync, service
 from vitasync.config import (
     ConfigError,
-    SteamConfig,
     VitaConfig,
     default_config_path,
     load_config,
-    load_steam_config,
 )
 from vitasync.ftp import FtpError, VitaFtpClient
-from vitasync.hotline_miami import SaveFormatError
 from vitasync.manifest import ManifestError, find_game
-from vitasync.p4g import ConversionError, parse_slots
+from vitasync.p4g import parse_slots
 from vitasync.p4g_sync import SyncError
 from vitasync.safety import backup_pc_dir, backup_vita_dir, write_pc_files
 from vitasync.store import LocalStore, StoreError, default_store_path
@@ -202,10 +199,10 @@ def run_backup(args: argparse.Namespace) -> int:
 
 
 def run_transfer(args: argparse.Namespace) -> int:
-    """Lance ``pull`` (Vita vers Steam) ou ``push`` (Steam vers la Vita).
+    """Lance ``pull``, ``push``, ``status`` ou ``sync`` pour un jeu.
 
     Args:
-        args: Arguments analysés de la sous-commande ``pull`` ou ``push``.
+        args: Arguments analysés de la sous-commande.
 
     Returns:
         0 en cas de succès, 1 en cas d'erreur (rien n'est alors écrit à la
@@ -214,81 +211,37 @@ def run_transfer(args: argparse.Namespace) -> int:
     command = args.command
     try:
         game = find_game(args.game)
-        if game.adapter not in ("p4g", "hotline_miami"):
-            raise SyncError(f"{game.name} : adaptateur {game.adapter} pas encore pris en charge")
-        is_p4g = game.adapter == "p4g"
+        service.check_supported(game)
         # Les slots sont vérifiés d'abord : une faute de frappe ne coûte pas de connexion.
         slots: list[int] = []
-        if is_p4g and command in ("pull", "push"):
+        if game.adapter == "p4g" and command in ("pull", "push"):
             if args.slots is None:
                 raise ValueError("--slots est obligatoire pour ce jeu (7, 1,7, system ou all)")
             slots = parse_slots(args.slots)
-        try:
-            steam: SteamConfig | None = load_steam_config(args.config or default_config_path())
-        except ConfigError:
-            if is_p4g:
-                raise
-            steam = None  # Hotline Miami n'a pas besoin de Steam
-        with VitaFtpClient(resolve_config(args)) as ftp:
+        session = service.open_session(
+            args.config, args.host, args.port, getattr(args, "store", None)
+        )
+        with VitaFtpClient(session.vita) as ftp:
             if command in ("status", "sync"):
-                if is_p4g:
-                    assert steam is not None
-                    states = p4g_sync.status(ftp, steam, game)
-                else:
-                    states = hotline_miami_sync.status(ftp, steam, game)
+                status = service.game_status(session, ftp, game)
                 if command == "status":
-                    print_status(states, as_time=is_p4g)
+                    print_status(status.states, as_time=not status.in_levels)
+                    if status.conflict:
+                        print(status.conflict)
                     return 0
-                direction, slots = p4g_sync.plan_sync(states)
-                if direction is None:
+                if status.conflict:
+                    raise SyncError(status.conflict)
+                if status.direction is None:
                     print("Déjà synchronisé : le PC et la Vita sont au même point.")
                     return 0
-                command = direction
-                where = "PC" if command == "push" else "Vita"
-                detail = f" des slots {','.join(map(str, slots))}" if is_p4g else ""
-                print(f"Plus avancé sur {where} : {command}{detail}.")
-            store = open_store(args)
-            if is_p4g:
-                assert steam is not None
-                if command == "pull":
-                    result = p4g_sync.pull(store, ftp, steam, game, slots)
-                else:
-                    result = p4g_sync.push(store, ftp, steam, game, slots)
-            elif command == "pull":
-                result = hotline_miami_sync.pull(store, ftp, steam, game)
-            else:
-                result = hotline_miami_sync.push(store, ftp, steam, game)
-    except (
-        SaveFormatError,
-        ValueError,
-        ManifestError,
-        StoreError,
-        ConfigError,
-        FtpError,
-        ConversionError,
-        SyncError,
-        OSError,
-    ) as exc:
+                print(service.describe_plan(status))
+                command, slots = status.direction, status.slots
+            result = service.transfer(session, ftp, game, command, slots)
+    except service.USER_ERRORS as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1
-
-    files = ", ".join(result.files)
-    print(f"Version d'origine enregistrée : {result.source.id}")
-    if result.backup is not None:
-        print(f"Copie de sécurité de la destination : {result.backup.id}")
-    if command == "pull":
-        if result.automatic:
-            print("Backup fait par l'appli VitaSync sur la Vita.")
-        if game.adapter == "p4g":
-            print(f"Copié dans Steam : {files} (+ .binslot), remotecache.vdf régénéré.")
-        else:
-            print(f"Copié sur le PC : {files}.")
-    elif result.automatic:
-        print(f"Restauré sur la Vita par l'appli VitaSync (slots remplacés : {files}).")
-    else:
-        slot = (game.vita.inbox or "").rstrip("/").rsplit("/", 1)[-1]
-        print(f"Sauvegarde complète prête dans {game.vita.inbox} (slots remplacés : {files})")
-        print(f"Dans Save Manager : {game.name} > {slot} > Restore.")
+    for line in service.describe_result(game, command, result):
+        print(line)
     return 0
 
 
