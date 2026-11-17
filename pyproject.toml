@@ -20,6 +20,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+build = [
+    "pyinstaller>=6.22.3",
+]
 dev = [
     "mypy>=1.13",
     "pyftpdlib>=2.2.0",

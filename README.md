@@ -24,7 +24,7 @@ Phase 6 (en cours) : `vitasync status` compare le temps de jeu de chaque slot en
 
 Phase 4 (deuxième jeu) : **Hotline Miami** (Steam 219150 ↔ Vita PCSB00318), sauvegarde `Documents\My Games\HotlineMiami\SaveData.sav`. Les fiches de jeu peuvent désormais viser des dossiers PC hors Steam.
 
-Fenêtre PC : `vitasync gui` (ou `.venv\Scripts\vitasync-gui.exe` en double-clic, sans console) affiche l'état de chaque jeu et synchronise en un clic, avec confirmation.
+Fenêtre PC : `vitasync gui` (ou `.venv\Scripts\vitasync-gui.exe` en double-clic, sans console) affiche l'état de chaque jeu et synchronise en un clic, avec confirmation. Pour l'avoir en double-clic sans le projet, construire `dist\VitaSync.exe` (voir *Exécutable Windows*).
 
 ## Procédure manuelle validée (P4G)
 
@@ -74,6 +74,14 @@ uv run ruff format --check
 uv run mypy
 uv run pytest
 ```
+
+### Exécutable Windows
+
+```bash
+uv run --group build python scripts/build_exe.py
+```
+
+Produit `dist\VitaSync.exe` (environ 11 Mo) : la fenêtre de VitaSync avec Python embarqué, sans console. Il se copie où l'on veut (bureau, autre PC) et lit la même configuration (`%APPDATA%\vitasync\config.toml`). Le premier lancement prend quelques secondes, le temps de se décompresser. À reconstruire après chaque modification du code. `dist/` et `build/` ne sont pas versionnés.
 
 ## Utilisation
 
