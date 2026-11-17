@@ -3,6 +3,8 @@
 import subprocess
 import sys
 
+from vitasync.frozen import no_window_flags
+
 
 def is_steam_running() -> bool:
     """Indique si le client Steam est lancé sur ce PC.
@@ -16,7 +18,13 @@ def is_steam_running() -> bool:
     else:
         command = ["pgrep", "-x", "steam"]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=no_window_flags(),
+        )
     except OSError:
         return True
     if sys.platform == "win32":

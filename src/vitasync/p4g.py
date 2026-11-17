@@ -11,10 +11,11 @@ import math
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+
+from vitasync.frozen import no_window_flags, python_command
 
 SYSTEM_SLOT = 0
 """Numéro du slot ``system.bin`` (données communes à toutes les parties)."""
@@ -175,10 +176,11 @@ def run_saveconv(saveconv: Path, script: str, save_dir: Path) -> Path:
     if not script_path.is_file():
         raise ConversionError(f"p4g-saveconv introuvable : {script_path}")
     result = subprocess.run(
-        [sys.executable, str(script_path), str(save_dir)],
+        [*python_command(script_path), str(save_dir)],
         capture_output=True,
         text=True,
         check=False,
+        creationflags=no_window_flags(),
     )
     if result.returncode != 0:
         raise ConversionError(f"{script} a échoué :\n{result.stderr.strip()}")

@@ -29,6 +29,10 @@ def main() -> None:
             "--collect-data=vitasync",
             # __version__ vient des métadonnées du paquet installé (importlib.metadata).
             "--copy-metadata=vitasync",
+            # Modules de la bibliothèque standard utilisés par p4g-saveconv, lancé
+            # par « VitaSync.exe --run-script » : PyInstaller n'embarque que ce que
+            # VitaSync importe lui-même, il ne voit pas les scripts externes.
+            *(f"--hidden-import={m}" for m in ("argparse", "hashlib", "math", "shutil", "struct")),
             f"--distpath={ROOT / 'dist'}",
             f"--workpath={ROOT / 'build'}",
             f"--specpath={ROOT / 'build'}",
